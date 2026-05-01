@@ -1,7 +1,7 @@
 import streamlit as st
 import gspread
-from google.oauth2.service_account import Credentials # Perbaikan library untuk Secrets
-import google.generativeai as genai # Menggunakan library standar generativeai
+from google.oauth2.service_account import Credentials # Library untuk otentikasi Secrets
+import google.generativeai as genai # Library standar Gemini AI
 from PIL import Image
 import os
 import time
@@ -59,46 +59,49 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # 2. API KEY & CLIENT (PERBAIKAN KEAMANAN)
-# Mengambil API Key dari Secrets Streamlit, bukan ditulis langsung (Hardcoded)
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash') # Menggunakan versi model yang stabil
+    model = genai.GenerativeModel('gemini-1.5-flash') 
 except Exception as e:
     st.error(f"Gagal Inisialisasi API: {e}")
 
-# 3. KONEKSI GOOGLE SHEETS (PERBAIKAN KEAMANAN)
+# 3. KONEKSI GOOGLE SHEETS (DENGAN FIX PEM FILE)
 @st.cache_resource
 def init_gsheet():
     try:
-        # Mengambil kredensial JSON dari brankas Secrets Streamlit
-        creds_info = st.secrets["gcp_service_account"]
+        # Ambil data dari Secrets dan ubah ke dictionary agar bisa dimodifikasi
+        creds_info = dict(st.secrets["gcp_service_account"])
+        
+        # --- FIX UTAMA: Membersihkan karakter \n agar terbaca sebagai baris baru ---
+        if "private_key" in creds_info:
+            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+        
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        # Proses otentikasi yang aman
+        # Inisialisasi kredensial dengan data yang sudah dibersihkan
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
         
         return gc.open("DATA INVENTORY PT.ESP").sheet1
     except Exception as e:
+        # Menampilkan pesan error di sidebar jika koneksi gagal
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
         return None
 
 sheet = init_gsheet()
 
-# 4. FUNGSI ANALISIS AI (DISESUAIKAN DENGAN LIBRARY GENERATIVEAI)
+# 4. FUNGSI ANALISIS AI
 def proses_analisis_ai(file_input):
     try:
         instruksi = "Kamu adalah AI Inventory PT ESP. Ekstrak teks penting dari dokumen ini secara detail."
         
         if file_input.type == "application/pdf":
-            # Logika untuk PDF (menggunakan bytes)
             pdf_data = file_input.read()
             response = model.generate_content([
                 {'mime_type': 'application/pdf', 'data': pdf_data},
                 instruksi
             ])
         else:
-            # Logika untuk Gambar
             img = Image.open(file_input)
             response = model.generate_content([img, instruksi])
             
@@ -108,9 +111,6 @@ def proses_analisis_ai(file_input):
             return "Kesalahan: Kuota API penuh. Tunggu 30 detik."
         return f"Kesalahan Sistem: {e}"
 
-# --- SISA KODE UI (DASHBOARD, SCAN, DATABASE) TETAP SAMA SEPERTI ASLINYA ---
-# (Kode 5 sampai 8 tidak ada perubahan sesuai permintaan lo)
-
 # 5. UI SIDEBAR
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
@@ -118,7 +118,7 @@ with st.sidebar:
     st.title("PT. ESP DATA INVENTORY")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.caption("Build v5.8 - Fix Logo Alignment")
+    st.caption("Build v5.9 - Fix Security & PEM Format")
 
 # 6. DASHBOARD
 if menu == "🏠 Dashboard":

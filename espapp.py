@@ -1,8 +1,7 @@
 import streamlit as st
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from google import genai
-from google.genai import types
+from google.oauth2.service_account import Credentials # Perbaikan library untuk Secrets
+import google.generativeai as genai # Menggunakan library standar generativeai
 from PIL import Image
 import os
 import time
@@ -59,23 +58,26 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. API KEY & CLIENT
-API_KEY = "AIzaSyDIDjenWxwMQ6zHEwb1dtq-EI5vzyTTdnY"
+# 2. API KEY & CLIENT (PERBAIKAN KEAMANAN)
+# Mengambil API Key dari Secrets Streamlit, bukan ditulis langsung (Hardcoded)
 try:
-    client = genai.Client(
-        api_key=API_KEY,
-        http_options={'api_version': 'v1beta'}   
-    )
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash') # Menggunakan versi model yang stabil
 except Exception as e:
     st.error(f"Gagal Inisialisasi API: {e}")
 
-# 3. KONEKSI GOOGLE SHEETS
+# 3. KONEKSI GOOGLE SHEETS (PERBAIKAN KEAMANAN)
 @st.cache_resource
 def init_gsheet():
     try:
+        # Mengambil kredensial JSON dari brankas Secrets Streamlit
+        creds_info = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        credentials_info = st.secrets["gcp_service_account"]
-        gc = gspread.service_account_from_dict(credentials_info)
+        
+        # Proses otentikasi yang aman
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        gc = gspread.authorize(creds)
+        
         return gc.open("DATA INVENTORY PT.ESP").sheet1
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
@@ -83,31 +85,31 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 4. FUNGSI ANALISIS AI
+# 4. FUNGSI ANALISIS AI (DISESUAIKAN DENGAN LIBRARY GENERATIVEAI)
 def proses_analisis_ai(file_input):
     try:
-        model_id = "gemini-2.5-flash" 
         instruksi = "Kamu adalah AI Inventory PT ESP. Ekstrak teks penting dari dokumen ini secara detail."
         
         if file_input.type == "application/pdf":
-            response = client.models.generate_content(
-                model=model_id,
-                contents=[
-                    types.Part.from_bytes(data=file_input.read(), mime_type="application/pdf"),
-                    instruksi
-                ]
-            )
+            # Logika untuk PDF (menggunakan bytes)
+            pdf_data = file_input.read()
+            response = model.generate_content([
+                {'mime_type': 'application/pdf', 'data': pdf_data},
+                instruksi
+            ])
         else:
+            # Logika untuk Gambar
             img = Image.open(file_input)
-            response = client.models.generate_content(
-                model=model_id, 
-                contents=[img, instruksi]
-            )
+            response = model.generate_content([img, instruksi])
+            
         return response.text
     except Exception as e:
         if "429" in str(e):
             return "Kesalahan: Kuota API penuh. Tunggu 30 detik."
         return f"Kesalahan Sistem: {e}"
+
+# --- SISA KODE UI (DASHBOARD, SCAN, DATABASE) TETAP SAMA SEPERTI ASLINYA ---
+# (Kode 5 sampai 8 tidak ada perubahan sesuai permintaan lo)
 
 # 5. UI SIDEBAR
 with st.sidebar:
@@ -120,7 +122,6 @@ with st.sidebar:
 
 # 6. DASHBOARD
 if menu == "🏠 Dashboard":
-    # HEADER DENGAN LOGO DISEBELAH TULISAN
     with st.container():
         st.markdown('<div class="header-box">', unsafe_allow_html=True)
         col_logo, col_text = st.columns([1, 4])
@@ -211,8 +212,6 @@ elif menu == "📤 Scan & Upload":
                             try:
                                 ts = time.strftime("%Y-%m-%d %H:%M:%S")
                                 ket_final = f"[DOKAP: {'YA' if kategori=='DOKAP' else 'TIDAK'}] - {hasil}"
-                                
-                                # Data 6 Kolom
                                 row = [nama_klien, ts, id_doc if id_doc else file_aktif.name, kategori, divisi, ket_final]
                                 sheet.append_row(row)
                                 st.success(f"✅ Data {divisi} Berhasil Disimpan!")

@@ -44,10 +44,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 3. INISIALISASI GEMINI API
+# Urutan model: coba yang paling hemat quota dulu, fallback ke yang lain
+MODEL_LIST = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash-8b"]
+
 model = None
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-2.0-flash')   # FIX: model stabil 2026
+    model = genai.GenerativeModel(MODEL_LIST[0])  # mulai dari model paling hemat
 except Exception as e:
     st.error(f"Gagal Inisialisasi API: {e}")
 
@@ -56,7 +59,6 @@ except Exception as e:
 def init_gsheet():
     try:
         creds_info = dict(st.secrets["gcp_service_account"])
-        # FIX PEM: pastikan newline terbaca benar
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         scope = [
@@ -72,30 +74,48 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 5. FUNGSI ANALISIS AI
+# 5. FUNGSI ANALISIS AI — dengan AUTO RETRY & MODEL FALLBACK
 def proses_analisis_ai(file_input):
     if model is None:
         return "Kesalahan Sistem: Model AI tidak terinisialisasi."
-    try:
-        instruksi = "Kamu adalah AI Inventory PT ESP. Ekstrak teks penting dari dokumen ini secara detail."
 
+    instruksi = "Kamu adalah AI Inventory PT ESP. Ekstrak teks penting dari dokumen ini secara detail."
+
+    # Siapkan konten berdasarkan tipe file
+    try:
         if file_input.type == "application/pdf":
-            # FIX: PDF harus di-encode base64 agar bisa dikirim ke Gemini
             pdf_bytes = file_input.read()
             pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-            response = model.generate_content([
-                {'mime_type': 'application/pdf', 'data': pdf_b64},
-                instruksi
-            ])
+            konten = [{'mime_type': 'application/pdf', 'data': pdf_b64}, instruksi]
         else:
             img = Image.open(file_input)
-            response = model.generate_content([img, instruksi])
-
-        return response.text
+            konten = [img, instruksi]
     except Exception as e:
-        if "429" in str(e):
-            return "Kesalahan: Kuota API penuh. Tunggu 30 detik lalu coba lagi."
-        return f"Kesalahan Sistem: {e}"
+        return f"Kesalahan membaca file: {e}"
+
+    # AUTO RETRY: coba hingga 3x dengan jeda bertahap, lalu fallback model
+    for model_name in MODEL_LIST:
+        current_model = genai.GenerativeModel(model_name)
+        for percobaan in range(1, 4):  # 3x percobaan per model
+            try:
+                response = current_model.generate_content(konten)
+                return response.text  # sukses, langsung return
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
+                    # Kuota habis — tunggu lalu coba lagi
+                    jeda = percobaan * 15  # 15s, 30s, 45s
+                    st.toast(f"⏳ Kuota penuh, mencoba ulang dalam {jeda} detik... (Model: {model_name}, percobaan {percobaan}/3)", icon="⚠️")
+                    time.sleep(jeda)
+                else:
+                    # Error lain, langsung gagal
+                    return f"Kesalahan Sistem: {e}"
+
+        # Semua percobaan di model ini gagal, coba model berikutnya
+        st.toast(f"🔄 Beralih ke model cadangan...", icon="🔁")
+        time.sleep(5)
+
+    return "❌ Semua model AI sedang overload. Coba lagi dalam 2-3 menit, atau upgrade ke Gemini API berbayar."
 
 # 6. SIDEBAR
 with st.sidebar:
@@ -104,7 +124,7 @@ with st.sidebar:
     st.title("PT. ESP DATA INVENTORY")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.caption("Build v6.0 - Production Ready")
+    st.caption("Build v6.1 - Auto Retry + Fallback Model")
 
 # 7. DASHBOARD
 if menu == "🏠 Dashboard":
@@ -168,13 +188,12 @@ elif menu == "📤 Scan & Upload":
     with col_l:
         st.subheader("📁 Upload File")
         u_file = st.file_uploader("Pilih PDF/Gambar", type=["pdf", "png", "jpg", "jpeg"])
-
     with col_r:
         st.subheader("📸 Scan Kamera")
         if "cam" not in st.session_state:
             st.session_state.cam = False
 
-        c_file = None   # FIX: selalu inisialisasi c_file agar tidak NameError
+        c_file = None
         if not st.session_state.cam:
             if st.button("📷 Buka Kamera", use_container_width=True):
                 st.session_state.cam = True
@@ -185,7 +204,6 @@ elif menu == "📤 Scan & Upload":
                 st.session_state.cam = False
                 st.rerun()
 
-    # FIX: pengecekan aman, c_file sudah pasti terdefinisi
     if st.session_state.cam and c_file is not None:
         file_aktif = c_file
     elif u_file is not None:
@@ -198,9 +216,9 @@ elif menu == "📤 Scan & Upload":
             if not nama_klien:
                 st.warning("⚠️ Nama Perusahaan wajib diisi!")
             else:
-                with st.spinner("AI sedang menganalisis dokumen..."):
+                with st.spinner("AI sedang menganalisis dokumen... (mungkin perlu beberapa saat jika kuota penuh)"):
                     hasil = proses_analisis_ai(file_aktif)
-                    if "Kesalahan" in hasil:
+                    if "Kesalahan" in hasil or "❌" in hasil:
                         st.error(hasil)
                     else:
                         st.info(hasil)
@@ -238,4 +256,3 @@ elif menu == "📑 Full Database":
             st.error(f"Gagal memuat database: {e}")
     else:
         st.error("Koneksi ke Google Sheets gagal. Periksa konfigurasi Secrets.")
-

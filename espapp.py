@@ -74,48 +74,79 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 5. FUNGSI ANALISIS AI — dengan AUTO RETRY & MODEL FALLBACK
+# 5. FUNGSI ANALISIS AI — dengan CACHE + KOMPRESI + AUTO RETRY & MODEL FALLBACK
+import hashlib
+import io
+
+def get_file_hash(file_input):
+    """Buat hash unik dari file untuk keperluan cache."""
+    file_input.seek(0)
+    content = file_input.read()
+    file_input.seek(0)
+    return hashlib.md5(content).hexdigest()
+
+def compress_image(file_input, max_size=(800, 800), quality=75):
+    """Kompres gambar agar lebih kecil → hemat token API."""
+    img = Image.open(file_input)
+    img.thumbnail(max_size, Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    buf.seek(0)
+    return Image.open(buf)
+
 def proses_analisis_ai(file_input):
     if model is None:
         return "Kesalahan Sistem: Model AI tidak terinisialisasi."
+
+    # --- CACHE: jika file sama sudah pernah dianalisis, pakai hasil lama ---
+    if "ai_cache" not in st.session_state:
+        st.session_state.ai_cache = {}
+
+    file_hash = get_file_hash(file_input)
+    if file_hash in st.session_state.ai_cache:
+        st.toast("⚡ Hasil diambil dari cache — tidak menggunakan quota API.", icon="✅")
+        return st.session_state.ai_cache[file_hash]
 
     instruksi = "Kamu adalah AI Inventory PT ESP. Ekstrak teks penting dari dokumen ini secara detail."
 
     # Siapkan konten berdasarkan tipe file
     try:
         if file_input.type == "application/pdf":
+            file_input.seek(0)
             pdf_bytes = file_input.read()
             pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
             konten = [{'mime_type': 'application/pdf', 'data': pdf_b64}, instruksi]
         else:
-            img = Image.open(file_input)
-            konten = [img, instruksi]
+            # Kompres gambar dulu agar hemat token
+            file_input.seek(0)
+            img_compressed = compress_image(file_input)
+            konten = [img_compressed, instruksi]
     except Exception as e:
         return f"Kesalahan membaca file: {e}"
 
     # AUTO RETRY: coba hingga 3x dengan jeda bertahap, lalu fallback model
     for model_name in MODEL_LIST:
         current_model = genai.GenerativeModel(model_name)
-        for percobaan in range(1, 4):  # 3x percobaan per model
+        for percobaan in range(1, 4):
             try:
                 response = current_model.generate_content(konten)
-                return response.text  # sukses, langsung return
+                hasil = response.text
+                # Simpan ke cache agar request berikutnya tidak pakai quota
+                st.session_state.ai_cache[file_hash] = hasil
+                return hasil
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
-                    # Kuota habis — tunggu lalu coba lagi
-                    jeda = percobaan * 15  # 15s, 30s, 45s
-                    st.toast(f"⏳ Kuota penuh, mencoba ulang dalam {jeda} detik... (Model: {model_name}, percobaan {percobaan}/3)", icon="⚠️")
+                    jeda = percobaan * 15  # 15s → 30s → 45s
+                    st.toast(f"⏳ Kuota penuh, retry dalam {jeda}s... (Model: {model_name}, percobaan {percobaan}/3)", icon="⚠️")
                     time.sleep(jeda)
                 else:
-                    # Error lain, langsung gagal
                     return f"Kesalahan Sistem: {e}"
 
-        # Semua percobaan di model ini gagal, coba model berikutnya
-        st.toast(f"🔄 Beralih ke model cadangan...", icon="🔁")
+        st.toast("🔄 Beralih ke model cadangan...", icon="🔁")
         time.sleep(5)
 
-    return "❌ Semua model AI sedang overload. Coba lagi dalam 2-3 menit, atau upgrade ke Gemini API berbayar."
+    return "❌ Semua model AI sedang overload. Coba lagi dalam 2-3 menit."
 
 # 6. SIDEBAR
 with st.sidebar:
@@ -124,7 +155,7 @@ with st.sidebar:
     st.title("PT. ESP DATA INVENTORY")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.caption("Build v6.1 - Auto Retry + Fallback Model")
+    st.caption("Build v6.2 - Mobile File Picker")
 
 # 7. DASHBOARD
 if menu == "🏠 Dashboard":
@@ -184,12 +215,53 @@ elif menu == "📤 Scan & Upload":
 
     st.markdown("---")
 
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.subheader("📁 Upload File")
-        u_file = st.file_uploader("Pilih PDF/Gambar", type=["pdf", "png", "jpg", "jpeg"])
-    with col_r:
-        st.subheader("📸 Scan Kamera")
+    # === INJECT JS: paksa input file agar tampilkan ikon File di HP ===
+    # Menambahkan application/pdf dan .pdf ke accept attribute
+    # sehingga browser mobile menampilkan 3 opsi: Kamera, Galeri, dan File Manager
+    st.markdown("""
+        <script>
+        function patchFileInputs() {
+            const inputs = document.querySelectorAll('input[type="file"]');
+            inputs.forEach(function(inp) {
+                // Tambahkan PDF & dokumen ke accept agar muncul ikon Files di HP
+                inp.setAttribute('accept', 'image/*,application/pdf,.pdf,.PDF');
+                // Hapus attribute capture agar tidak dipaksa pakai kamera saja
+                inp.removeAttribute('capture');
+            });
+        }
+        // Jalankan sekarang dan pantau perubahan DOM (Streamlit sering re-render)
+        patchFileInputs();
+        const observer = new MutationObserver(patchFileInputs);
+        observer.observe(document.body, { childList: true, subtree: true });
+        </script>
+    """, unsafe_allow_html=True)
+
+    # === 3 KOLOM PILIHAN INPUT: File | Galeri/Foto | Kamera ===
+    col_file, col_img, col_cam = st.columns(3)
+
+    with col_file:
+        st.markdown("##### 📄 File / PDF")
+        st.caption("Dokumen, PDF, dari File Manager HP")
+        u_pdf = st.file_uploader(
+            "Pilih File",
+            type=["pdf"],
+            key="uploader_pdf",
+            label_visibility="collapsed"
+        )
+
+    with col_img:
+        st.markdown("##### 🖼️ Gambar / Foto")
+        st.caption("Dari Galeri atau Foto HP")
+        u_img = st.file_uploader(
+            "Pilih Gambar",
+            type=["png", "jpg", "jpeg"],
+            key="uploader_img",
+            label_visibility="collapsed"
+        )
+
+    with col_cam:
+        st.markdown("##### 📸 Kamera")
+        st.caption("Foto langsung dari kamera")
         if "cam" not in st.session_state:
             st.session_state.cam = False
 
@@ -199,19 +271,35 @@ elif menu == "📤 Scan & Upload":
                 st.session_state.cam = True
                 st.rerun()
         else:
-            c_file = st.camera_input("Ambil Foto")
-            if st.button("❌ Tutup Kamera"):
+            c_file = st.camera_input("Ambil Foto", label_visibility="collapsed")
+            if st.button("❌ Tutup", use_container_width=True):
                 st.session_state.cam = False
                 st.rerun()
 
+    # Tentukan file aktif — prioritas: Kamera > PDF > Gambar
     if st.session_state.cam and c_file is not None:
         file_aktif = c_file
-    elif u_file is not None:
-        file_aktif = u_file
+    elif u_pdf is not None:
+        file_aktif = u_pdf
+    elif u_img is not None:
+        file_aktif = u_img
     else:
         file_aktif = None
 
+    # Tampilkan preview file yang aktif
     if file_aktif:
+        if hasattr(file_aktif, 'name') and file_aktif.name.endswith(".pdf"):
+            st.success(f"📄 File siap diproses: **{file_aktif.name}**")
+        elif file_aktif != c_file:
+            try:
+                file_aktif.seek(0)
+                st.image(file_aktif, caption="Preview Gambar", use_column_width=True)
+                file_aktif.seek(0)
+            except Exception:
+                pass
+
+    if file_aktif:
+        st.markdown("---")
         if st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
             if not nama_klien:
                 st.warning("⚠️ Nama Perusahaan wajib diisi!")
@@ -256,3 +344,4 @@ elif menu == "📑 Full Database":
             st.error(f"Gagal memuat database: {e}")
     else:
         st.error("Koneksi ke Google Sheets gagal. Periksa konfigurasi Secrets.")
+

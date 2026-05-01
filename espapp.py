@@ -74,8 +74,8 @@ except Exception as e:
 def init_gsheet():
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-        gc = gspread.authorize(creds)
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = ServiceAccountCredentials.from_json_dict(creds_dict, scope)
         return gc.open("DATA INVENTORY PT.ESP").sheet1
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")

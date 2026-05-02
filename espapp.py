@@ -129,18 +129,14 @@ def proses_analisis_ai(file_input, client_name):
 # ============================================================
 # 6. SIDEBAR NAVIGATION
 # ============================================================
-# ============================================================
-# 6. SIDEBAR NAVIGATION
-# ============================================================
 with st.sidebar:
-    if os.path.exists("ESP LOGO ICON RED WHITE.png"):
-        st.image("ESP LOGO ICON RED WHITE.png", width=180)
+    # Membuat logo presisi di tengah menggunakan kolom
+    side_col1, side_col2, side_col3 = st.columns([1, 3, 1])
+    with side_col2:
+        if os.path.exists("ESP LOGO ICON RED WHITE.png"):
+            st.image("ESP LOGO ICON RED WHITE.png", use_container_width=True)
     
-    # Perubahan: Judul diganti menjadi PT. EKASARI PERKASA
     st.title("PT. EKASARI PERKASA") 
-    
-    # Perubahan: Baris 'GEMINI 3 ACTIVE' sudah dihapus dari sini
-    
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
@@ -153,15 +149,15 @@ with st.sidebar:
 # ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
-    c_logo, c_txt = st.columns([1, 5])
+    # vertical_alignment="center" memastikan logo sejajar tengah dengan teks
+    c_logo, c_txt = st.columns([1, 5], vertical_alignment="center") 
     with c_logo:
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
             st.image("ESP LOGO ICON RED WHITE.png", width=100)
     with c_txt:
         st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='margin:0;'> Inventory Dashboard</p>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:0;'>Inventory Dashboard</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
     if sheet:
         try:
             df = pd.DataFrame(sheet.get_all_records())

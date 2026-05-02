@@ -45,11 +45,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. INISIALISASI GEMINI API (REVISI ANTI-404)
+# 3. INISIALISASI GEMINI API (FIX 404 & PAID TIER)
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # Menggunakan nama model standar yang paling kompatibel
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # Menggunakan model latest untuk kompatibilitas maksimal
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
 except Exception as e:
     st.error(f"Gagal Inisialisasi API: {e}")
     model = None
@@ -71,7 +71,7 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 5. FUNGSI ANALISIS AI (REVISI JALUR PRIORITAS & FALLBACK MODEL)
+# 5. FUNGSI ANALISIS AI (FIX TOTAL ANTI-404)
 def get_file_hash(file_input):
     file_input.seek(0)
     content = file_input.read()
@@ -111,33 +111,34 @@ def proses_analisis_ai(file_input):
             konten = [img_compressed, instruksi]
     except Exception as e: return f"Kesalahan membaca file: {e}"
 
-    # LOOP RETRY DENGAN FALLBACK UNTUK MENGATASI ERROR 404/429
-    for i in range(3):
+    # LIST VARIASI MODEL UNTUK MENGATASI ERROR 404 PADA VERSI API BERBEDA
+    model_variants = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "models/gemini-1.5-flash"]
+    
+    for m_name in model_variants:
         try:
-            response = model.generate_content(konten)
+            curr_model = genai.GenerativeModel(m_name)
+            response = curr_model.generate_content(konten)
             st.session_state.ai_cache[file_hash] = response.text
             return response.text
         except Exception as e:
             err_msg = str(e).lower()
-            
-            # Jika error 404 (Model Not Found), coba tembak manual dengan prefix
+            # Jika 404, lanjut ke variasi nama model berikutnya
             if "404" in err_msg:
+                continue
+            
+            # Jika overload/quota (429), beri jeda singkat (Jalur Paid)
+            if any(x in err_msg for x in ["429", "quota", "overloaded"]):
+                st.warning(f"🚀 Menghubungi Jalur Prioritas... ({m_name})")
+                time.sleep(2)
                 try:
-                    fallback_model = genai.GenerativeModel("models/gemini-1.5-flash")
-                    response = fallback_model.generate_content(konten)
+                    response = curr_model.generate_content(konten)
                     st.session_state.ai_cache[file_hash] = response.text
                     return response.text
-                except: pass
-
-            # Jalur Prioritas: Waktu tunggu singkat untuk Tier Berbayar
-            if any(x in err_msg for x in ["429", "quota", "overloaded"]):
-                wait_time = 2 * (i + 1)
-                st.warning(f"🚀 Menghubungi Jalur Prioritas Google... ({i+1}/3)")
-                time.sleep(wait_time)
+                except: continue
             else:
                 return f"❌ Error API: {e}"
             
-    return "❌ Gagal memproses setelah beberapa percobaan. Silakan coba lagi."
+    return "❌ Semua variasi model gagal (404). Pastikan API Key aktif di Google AI Studio bray."
 
 # 6. SIDEBAR
 with st.sidebar:
@@ -146,7 +147,7 @@ with st.sidebar:
     st.title("PT. ESP DATA INVENTORY")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.caption("Build v6.5 - Premium Paid Tier")
+    st.caption("Build v6.6 - Ultimate Fix 404")
 
 # 7. DASHBOARD
 if menu == "🏠 Dashboard":

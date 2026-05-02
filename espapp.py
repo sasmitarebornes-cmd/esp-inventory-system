@@ -6,7 +6,6 @@ from PIL import Image
 import os
 import time
 import pandas as pd
-import hashlib
 import io
 
 # ============================================================
@@ -68,7 +67,8 @@ def init_gsheet():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        sh = gc.open("DATA INVENTORY PT.ESP").sheet1
+        # Buka spreadsheet dan ambil sheet pertama
+        sh = gc.open("DATA INVENTORY PT.ESP").get_worksheet(0)
         return sh
     except Exception as e:
         st.sidebar.error(f"Koneksi Gagal: {e}")
@@ -78,7 +78,7 @@ sheet = init_gsheet()
 API_KEYS = load_api_keys()
 
 # ============================================================
-# 4. AI AGENT ENGINE (DEEP ANALYSIS & COMPLETE EXTRACT)
+# 4. AI AGENT ENGINE (DEEP ANALYSIS)
 # ============================================================
 def analyze_document_deep(file_data, is_pdf=False, client_name=""):
     instruksi = f"""
@@ -100,7 +100,7 @@ def analyze_document_deep(file_data, is_pdf=False, client_name=""):
         if is_pdf:
             content = [{"mime_type": "application/pdf", "data": file_data}, instruksi]
         else:
-            img = Image.open(io.BytesIO(file_data) if isinstance(file_data, bytes) else file_data)
+            img = Image.open(io.BytesIO(file_data))
             if img.mode != 'RGB': img = img.convert('RGB')
             content = [img, instruksi]
             
@@ -113,8 +113,12 @@ def analyze_document_deep(file_data, is_pdf=False, client_name=""):
 # 5. SIDEBAR NAVIGATION
 # ============================================================
 with st.sidebar:
+    # Coba load logo PT.ESP
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
-        st.image("ESP LOGO ICON RED WHITE.png", width=180)
+        st.image("ESP LOGO ICON RED WHITE.png", width=200)
+    else:
+        st.markdown("### PT. ESP LOGO") # Fallback jika file tidak ada
+        
     st.title("PT. ESP AGENT")
     st.markdown("<span class='status-badge'>AI CORE ACTIVE</span>", unsafe_allow_html=True)
     st.markdown("---")
@@ -125,37 +129,48 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================
-# 6. DASHBOARD (SINKRON DENGAN GAMBAR SHEETS)
+# 6. DASHBOARD (FIXED ERROR KEYERROR)
 # ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box"><h1>SMART DASHBOARD</h1><p>PT. ESP - Inventory Monitoring</p></div>', unsafe_allow_html=True)
+    
     if sheet:
         raw_rows = sheet.get_all_records()
         if raw_rows:
             data = pd.DataFrame(raw_rows)
-            # Menggunakan nama kolom sesuai gambar lo bray
+            # Membersihkan nama kolom dari spasi nggak jelas
+            data.columns = data.columns.str.strip()
+            
+            # Cek kolom wajib untuk Dashboard
             col_klien = "Nama Perusahaan"
+            col_tgl = "Tanggal"
+            
             if col_klien in data.columns:
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Total Dokumen", len(data))
                 c2.metric("Klien Terdaftar", len(data[col_klien].unique()))
-                c3.metric("Update", str(data.iloc[-1]['Tanggal']).split()[0])
+                
+                # Proteksi kolom Tanggal
+                if col_tgl in data.columns:
+                    last_update = str(data.iloc[-1][col_tgl]).split()[0]
+                    c3.metric("Update Terakhir", last_update)
                 
                 st.subheader("📊 Transaksi Terakhir")
-                st.table(data.tail(5)[[col_klien, 'Kategori', 'Tanggal']])
+                # Ambil kolom yang ada saja biar nggak error lagi
+                cols_to_show = [c for c in [col_klien, 'Kategori', col_tgl] if c in data.columns]
+                st.table(data.tail(5)[cols_to_show])
         else:
             st.info("👋 Sistem Aktif. Silakan upload dokumen pertama lo bray!")
 
 # ============================================================
-# 7. SCAN & UPLOAD (FIXED HEADER & CAMERA)
+# 7. SCAN & UPLOAD
 # ============================================================
 elif menu == "📤 Deep Scan & Upload":
     st.markdown('<div class="header-box"><h2>DEEP SCAN AGENT</h2><p>Auto-Folder & Deep Analysis</p></div>', unsafe_allow_html=True)
     
-    # Input sesuai kolom Sheets
     nama_perusahaan = st.text_input("🏢 Nama Perusahaan (Klien)")
     c1, c2 = st.columns(2)
-    with c1: divisi = st.selectbox("📂 divisi", ["EXPORT", "IMPORT"])
+    with c1: divisi = st.selectbox("📂 Divisi", ["EXPORT", "IMPORT"])
     with c2: kategori = st.selectbox("🏷️ Kategori", ["MAWB", "INVOICE", "PACKING LIST", "SURAT JALAN", "DOKAP"])
     id_doc = st.text_input("🆔 ID Document (AWB/INV)")
 
@@ -175,18 +190,17 @@ elif menu == "📤 Deep Scan & Upload":
 
     if source and st.button("🚀 PROSES DOKUMEN SEKARANG", type="primary"):
         if not nama_perusahaan:
-            st.error("⚠️ Nama Perusahaan wajib diisi buat Auto-Folder ya sayank!")
+            st.error("⚠️ Nama Perusahaan wajib diisi bray!")
         else:
-            with st.spinner("🤖 AI sedang bekerja keras..."):
+            with st.spinner("🤖 AI sedang menganalisa..."):
                 is_pdf = (getattr(source, 'type', '') == "application/pdf")
                 content = source.read()
                 
-                # Eksekusi AI Deep Analysis
                 keterangan_ai = analyze_document_deep(content, is_pdf, nama_perusahaan)
                 
                 if "❌" not in keterangan_ai:
                     tanggal_skrg = time.strftime("%Y-%m-%d %H:%M:%S")
-                    # Urutan: Nama Perusahaan, Tanggal, ID Document, Kategori, divisi, Keterangan
+                    # Urutan sesuai Sheets lo bray
                     sheet.append_row([
                         nama_perusahaan, 
                         tanggal_skrg, 
@@ -202,7 +216,7 @@ elif menu == "📤 Deep Scan & Upload":
                     st.error(keterangan_ai)
 
 # ============================================================
-# 8. DATABASE (SINKRON DENGAN GAMBAR SHEETS)
+# 8. DATABASE
 # ============================================================
 elif menu == "📑 Central Database":
     st.header("📑 Database Inventory ESP")
@@ -210,13 +224,13 @@ elif menu == "📑 Central Database":
         raw_rows = sheet.get_all_records()
         if raw_rows:
             df = pd.DataFrame(raw_rows)
+            df.columns = df.columns.str.strip() # Bersihin spasi nama kolom
             search = st.text_input("🔍 Cari (Nama Klien / No AWB)")
             if search:
                 df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
             st.dataframe(df, use_container_width=True)
             
-            # Export
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Database CSV", csv, "Database_ESP.csv", "text/csv")
         else:
-            st.warning("Database masih kosong ayank beib.")
+            st.warning("Database masih kosong bray.")

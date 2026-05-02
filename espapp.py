@@ -6,34 +6,37 @@ from PIL import Image
 import os
 import time
 import pandas as pd
+import hashlib
 import io
 
 # ============================================================
-# 1. SETUP HALAMAN & IDENTITAS PT. ESP
+# 1. SETUP HALAMAN
 # ============================================================
 st.set_page_config(
-    page_title="PT. ESP - AI AGENT INVENTORY",
+    page_title="PT. ESP - SMART INVENTORY 2026",
     layout="wide",
     page_icon="ESP LOGO ICON RED WHITE.png"
 )
 
 # ============================================================
-# 2. CSS CUSTOM (PREMIUM & MOBILE OPTIMIZED)
+# 2. CSS CUSTOM (PREMIUM PT. ESP STYLE)
 # ============================================================
 st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa !important; }
+    .stApp { background-color: #f0f2f6 !important; }
     [data-testid="stSidebar"] { background-color: #0e2135 !important; }
-    [data-testid="stSidebar"] .stText, [data-testid="stSidebar"] label, 
-    [data-testid="stSidebar"] .stMarkdown p { color: #ffffff !important; }
+    [data-testid="stSidebar"] .stText,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stMarkdown p,
+    [data-testid="stSidebar"] h1 { color: #ffffff !important; }
     
     .header-box {
-        background: linear-gradient(90deg, #d32f2f 0%, #b71c1c 100%);
-        padding: 25px;
+        background-color: white;
+        padding: 20px 40px;
         border-radius: 15px;
-        color: white;
-        box-shadow: 0px 4px 20px rgba(0,0,0,0.2);
+        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
         margin-bottom: 25px;
+        border-bottom: 5px solid #d32f2f;
     }
     .status-badge {
         background-color: #00e676;
@@ -43,21 +46,38 @@ st.markdown("""
         font-size: 0.7rem;
         font-weight: bold;
     }
-    .stButton button {
-        width: 100%;
-        border-radius: 12px;
-        height: 3.5em;
-        font-weight: bold;
+    div[data-testid="metric-container"] {
+        background-color: white !important;
+        padding: 20px !important;
+        border-radius: 10px !important;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05) !important;
+        border-left: 5px solid #0e2135 !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 3. KONEKSI GOOGLE SHEETS & API KEY
+# 3. LOAD API KEY & MODEL LIST (GEMINI 3)
 # ============================================================
 def load_api_keys():
     return [st.secrets["GOOGLE_API_KEY"]] if "GOOGLE_API_KEY" in st.secrets else []
 
+API_KEYS = load_api_keys()
+
+# Menggunakan model Gemini terbaru tahun 2026
+MODEL_LIST = [
+    "gemini-3-flash", 
+    "gemini-3-flash-preview", 
+    "gemini-2.0-flash-exp" # Fallback
+]
+
+if not API_KEYS:
+    st.error("❌ API KEY TIDAK DITEMUKAN!")
+    st.stop()
+
+# ============================================================
+# 4. KONEKSI GOOGLE SHEETS
+# ============================================================
 @st.cache_resource
 def init_gsheet():
     try:
@@ -67,170 +87,134 @@ def init_gsheet():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        # Buka spreadsheet dan ambil sheet pertama
-        sh = gc.open("DATA INVENTORY PT.ESP").get_worksheet(0)
-        return sh
+        return gc.open("DATA INVENTORY PT.ESP").get_worksheet(0)
     except Exception as e:
-        st.sidebar.error(f"Koneksi Gagal: {e}")
+        st.sidebar.error(f"Gagal koneksi Sheets: {e}")
         return None
 
 sheet = init_gsheet()
-API_KEYS = load_api_keys()
 
 # ============================================================
-# 4. AI AGENT ENGINE (DEEP ANALYSIS)
+# 5. HELPER & AI CORE
 # ============================================================
-def analyze_document_deep(file_data, is_pdf=False, client_name=""):
-    instruksi = f"""
-    Kamu adalah AI AGENT EXPERT INVENTORY untuk PT. EKASARI PERKASA (PT. ESP).
-    Dokumen ini milik Klien: {client_name}.
+def get_file_hash(file_input):
+    file_input.seek(0)
+    return hashlib.md5(file_input.read()).hexdigest()
+
+def build_content(file_input, instruksi):
+    if hasattr(file_input, 'type') and file_input.type == "application/pdf":
+        file_input.seek(0)
+        return [{"mime_type": "application/pdf", "data": file_input.read()}, instruksi]
+    else:
+        # Untuk Gambar/Kamera
+        img = Image.open(file_input)
+        if img.mode != 'RGB': img = img.convert('RGB')
+        return [img, instruksi]
+
+def proses_analisis_ai(file_input, client_name):
+    instruksi = f"Kamu adalah AI Inventory PT ESP. Analisis dokumen klien {client_name}. Ekstrak detail barang, berat, dan no dokumen secara profesional."
     
-    Tugasmu adalah melakukan DEEP ANALYSIS:
-    1. EKSTRAK DETAIL: Ambil No AWB/Invoice, Nama Pengirim & Penerima, Deskripsi Barang Lengkap, Berat (Gross/Net), dan Quantity/Koli.
-    2. VALIDASI OPERASIONAL: Cek apakah ada data yang tidak sinkron atau mencurigakan.
-    3. REKOMENDASI: Berikan kesimpulan singkat apakah dokumen ini lengkap untuk proses logistik selanjutnya.
-    
-    Format Output: Gunakan Markdown yang rapi dengan poin-poin profesional.
-    """
-    try:
-        if not API_KEYS: return "❌ API Key tidak ditemukan bray."
-        genai.configure(api_key=API_KEYS[0])
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        if is_pdf:
-            content = [{"mime_type": "application/pdf", "data": file_data}, instruksi]
-        else:
-            img = Image.open(io.BytesIO(file_data))
-            if img.mode != 'RGB': img = img.convert('RGB')
-            content = [img, instruksi]
-            
-        response = model.generate_content(content)
-        return response.text
-    except Exception as e:
-        return f"❌ Error AI: {str(e)}"
+    for api_key in API_KEYS:
+        genai.configure(api_key=api_key)
+        for model_name in MODEL_LIST:
+            try:
+                model = genai.GenerativeModel(model_name)
+                content = build_content(file_input, instruksi)
+                response = model.generate_content(content)
+                return response.text
+            except Exception:
+                continue
+    return "❌ Gagal. Model Gemini 3 tidak merespon atau kuota habis."
 
 # ============================================================
-# 5. SIDEBAR NAVIGATION
+# 6. SIDEBAR NAVIGATION
 # ============================================================
 with st.sidebar:
-    # Coba load logo PT.ESP
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
-        st.image("ESP LOGO ICON RED WHITE.png", width=200)
-    else:
-        st.markdown("### PT. ESP LOGO") # Fallback jika file tidak ada
-        
+        st.image("ESP LOGO ICON RED WHITE.png", width=180)
     st.title("PT. ESP AGENT")
-    st.markdown("<span class='status-badge'>AI CORE ACTIVE</span>", unsafe_allow_html=True)
+    st.markdown("<span class='status-badge'>GEMINI 3 ACTIVE</span>", unsafe_allow_html=True)
     st.markdown("---")
-    menu = st.radio("MAIN MENU", ["🏠 Dashboard", "📤 Deep Scan & Upload", "📑 Central Database"])
+    menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     if st.button("🔄 System Refresh"):
         st.cache_resource.clear()
         st.rerun()
 
 # ============================================================
-# 6. DASHBOARD (FIXED ERROR KEYERROR)
+# 7. DASHBOARD
 # ============================================================
 if menu == "🏠 Dashboard":
-    st.markdown('<div class="header-box"><h1>SMART DASHBOARD</h1><p>PT. ESP - Inventory Monitoring</p></div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="header-box">', unsafe_allow_html=True)
+    c_logo, c_txt = st.columns([1, 5])
+    with c_logo:
+        if os.path.exists("ESP LOGO ICON RED WHITE.png"):
+            st.image("ESP LOGO ICON RED WHITE.png", width=100)
+    with c_txt:
+        st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:0;'> Inventory Dashboard</p>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
     if sheet:
-        raw_rows = sheet.get_all_records()
-        if raw_rows:
-            data = pd.DataFrame(raw_rows)
-            # Membersihkan nama kolom dari spasi nggak jelas
-            data.columns = data.columns.str.strip()
-            
-            # Cek kolom wajib untuk Dashboard
-            col_klien = "Nama Perusahaan"
-            col_tgl = "Tanggal"
-            
-            if col_klien in data.columns:
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Dokumen", len(data))
-                c2.metric("Klien Terdaftar", len(data[col_klien].unique()))
-                
-                # Proteksi kolom Tanggal
-                if col_tgl in data.columns:
-                    last_update = str(data.iloc[-1][col_tgl]).split()[0]
-                    c3.metric("Update Terakhir", last_update)
-                
-                st.subheader("📊 Transaksi Terakhir")
-                # Ambil kolom yang ada saja biar nggak error lagi
-                cols_to_show = [c for c in [col_klien, 'Kategori', col_tgl] if c in data.columns]
-                st.table(data.tail(5)[cols_to_show])
-        else:
-            st.info("👋 Sistem Aktif. Silakan upload dokumen pertama lo bray!")
+        try:
+            df = pd.DataFrame(sheet.get_all_records())
+            df.columns = df.columns.str.strip()
+            if not df.empty:
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Total Dokumen", f"{len(df)}")
+                s2.metric("Klien Terakhir", str(df.iloc[-1, 0]))
+                if "Tanggal" in df.columns:
+                    s3.metric("Update", str(df.iloc[-1]['Tanggal']).split()[0])
+                st.subheader("📊 Transaksi Terbaru")
+                st.dataframe(df.tail(10), use_container_width=True)
+        except:
+            st.info("👋 Selamat datang di Sistem Inventory PT. ESP!")
 
 # ============================================================
-# 7. SCAN & UPLOAD
+# 8. SCAN & UPLOAD (DENGAN KAMERA)
 # ============================================================
-elif menu == "📤 Deep Scan & Upload":
-    st.markdown('<div class="header-box"><h2>DEEP SCAN AGENT</h2><p>Auto-Folder & Deep Analysis</p></div>', unsafe_allow_html=True)
-    
-    nama_perusahaan = st.text_input("🏢 Nama Perusahaan (Klien)")
-    c1, c2 = st.columns(2)
-    with c1: divisi = st.selectbox("📂 Divisi", ["EXPORT", "IMPORT"])
-    with c2: kategori = st.selectbox("🏷️ Kategori", ["MAWB", "INVOICE", "PACKING LIST", "SURAT JALAN", "DOKAP"])
-    id_doc = st.text_input("🆔 ID Document (AWB/INV)")
+elif menu == "📤 Scan & Upload":
+    st.header("📤 Input Dokumen Inventory")
+    col1, col2 = st.columns(2)
+    with col1:
+        nama_klien = st.text_input("Nama Perusahaan (Klien)")
+        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT"])
+    with col2:
+        kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "Lainnya"])
+        id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
     st.markdown("---")
-    u_file = st.file_uploader("📁 Upload File (PDF/Gambar)", type=["pdf", "jpg", "jpeg", "png"])
+    u_file = st.file_uploader("Upload File", type=["pdf", "jpg", "png"])
     
     if "cam_on" not in st.session_state: st.session_state.cam_on = False
-    if st.button("📷 Aktifkan/Matikan Kamera"):
+    if st.button("📷 Buka/Tutup Kamera"):
         st.session_state.cam_on = not st.session_state.cam_on
         st.rerun()
-    
-    cam_shot = None
-    if st.session_state.cam_on:
-        cam_shot = st.camera_input("Ambil Foto Dokumen")
-        
+
+    cam_shot = st.camera_input("Ambil Foto") if st.session_state.cam_on else None
     source = u_file if u_file else cam_shot
 
-    if source and st.button("🚀 PROSES DOKUMEN SEKARANG", type="primary"):
-        if not nama_perusahaan:
-            st.error("⚠️ Nama Perusahaan wajib diisi bray!")
+    if source and st.button("🚀 PROSES & SIMPAN", type="primary", use_container_width=True):
+        if not nama_klien:
+            st.warning("⚠️ Isi Nama Perusahaan dulu ya sayank!")
         else:
-            with st.spinner("🤖 AI sedang menganalisa..."):
-                is_pdf = (getattr(source, 'type', '') == "application/pdf")
-                content = source.read()
-                
-                keterangan_ai = analyze_document_deep(content, is_pdf, nama_perusahaan)
-                
-                if "❌" not in keterangan_ai:
-                    tanggal_skrg = time.strftime("%Y-%m-%d %H:%M:%S")
-                    # Urutan sesuai Sheets lo bray
-                    sheet.append_row([
-                        nama_perusahaan, 
-                        tanggal_skrg, 
-                        id_doc if id_doc else "Auto", 
-                        kategori, 
-                        divisi, 
-                        keterangan_ai
-                    ])
-                    st.success(f"✅ Data {nama_perusahaan} Berhasil Disimpan!")
-                    st.markdown(keterangan_ai)
-                    st.session_state.cam_on = False
+            with st.spinner("🤖 AI Gemini 3 sedang bekerja..."):
+                hasil = proses_analisis_ai(source, nama_klien)
+                if "❌" not in hasil:
+                    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                    sheet.append_row([nama_klien, ts, id_doc if id_doc else "Auto", kategori, divisi, hasil])
+                    st.success("✅ Data Berhasil Masuk ke Database PT. ESP!")
+                    st.info(hasil)
                 else:
-                    st.error(keterangan_ai)
+                    st.error(hasil)
 
 # ============================================================
-# 8. DATABASE
+# 9. DATABASE
 # ============================================================
-elif menu == "📑 Central Database":
-    st.header("📑 Database Inventory ESP")
+elif menu == "📑 Full Database":
+    st.header("📊 Full Inventory Log")
     if sheet:
-        raw_rows = sheet.get_all_records()
-        if raw_rows:
-            df = pd.DataFrame(raw_rows)
-            df.columns = df.columns.str.strip() # Bersihin spasi nama kolom
-            search = st.text_input("🔍 Cari (Nama Klien / No AWB)")
-            if search:
-                df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
-            st.dataframe(df, use_container_width=True)
-            
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Database CSV", csv, "Database_ESP.csv", "text/csv")
-        else:
-            st.warning("Database masih kosong bray.")
+        data = pd.DataFrame(sheet.get_all_records())
+        st.dataframe(data, use_container_width=True)
+        csv = data.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "Database_ESP.csv", "text/csv")

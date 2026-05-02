@@ -70,7 +70,7 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 5. FUNGSI ANALISIS AI (OPTIMIZED FOR OVERLOAD)
+# 5. FUNGSI ANALISIS AI (OPTIMIZED FOR PAID TIER)
 def get_file_hash(file_input):
     file_input.seek(0)
     content = file_input.read()
@@ -110,24 +110,23 @@ def proses_analisis_ai(file_input):
             konten = [img_compressed, instruksi]
     except Exception as e: return f"Kesalahan membaca file: {e}"
 
-    for m_name in ["gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+    # REVISI: JALUR PRIORITAS (PAID TIER)
+    for i in range(3):
         try:
-            curr_model = genai.GenerativeModel(m_name)
-            for i in range(3):
-                try:
-                    response = curr_model.generate_content(konten)
-                    st.session_state.ai_cache[file_hash] = response.text
-                    return response.text
-                except Exception as e:
-                    err_msg = str(e).lower()
-                    if any(x in err_msg for x in ["429", "quota", "overloaded"]):
-                        wait_time = 45 * (i + 1)
-                        st.warning(f"⚠️ Server sibuk. Tunggu {wait_time} detik... (Percobaan {i+1}/3)")
-                        time.sleep(wait_time)
-                    else: raise e
-        except Exception: continue
+            response = model.generate_content(konten)
+            st.session_state.ai_cache[file_hash] = response.text
+            return response.text
+        except Exception as e:
+            err_msg = str(e).lower()
+            if any(x in err_msg for x in ["429", "quota", "overloaded"]):
+                # Waktu tunggu dipangkas dari 45 detik menjadi 2-5 detik untuk jalur berbayar
+                wait_time = 2 * (i + 1)
+                st.warning(f"🚀 Menghubungi Jalur Prioritas Google... ({i+1}/3)")
+                time.sleep(wait_time)
+            else:
+                return f"❌ Error API: {e}"
             
-    return "❌ Server Google overload. Mohon tunggu 1 menit lalu klik 'Proses' lagi."
+    return "❌ Server masih sibuk. Klik 'PROSES & SIMPAN' lagi bray."
 
 # 6. SIDEBAR
 with st.sidebar:
@@ -136,7 +135,7 @@ with st.sidebar:
     st.title("PT. ESP DATA INVENTORY")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.caption("Build v6.4 - Overload Protection")
+    st.caption("Build v6.5 - Premium Paid Tier")
 
 # 7. DASHBOARD
 if menu == "🏠 Dashboard":
@@ -167,14 +166,6 @@ elif menu == "📤 Scan & Upload":
     kategori = c_b.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Lainnya"])
     id_doc = c_b.text_input("ID Document")
 
-    st.markdown("""<script>
-        function patch() {
-            const ins = document.querySelectorAll('input[type="file"]');
-            ins.forEach(i => { i.setAttribute('accept', 'image/*,application/pdf,.pdf'); i.removeAttribute('capture'); });
-        }
-        patch(); new MutationObserver(patch).observe(document.body, {childList:true, subtree:true});
-    </script>""", unsafe_allow_html=True)
-
     col_file, col_img, col_cam = st.columns(3)
     u_pdf = col_file.file_uploader("📄 PDF", type=["pdf"])
     u_img = col_img.file_uploader("🖼️ Gambar", type=["png", "jpg", "jpeg"])
@@ -185,7 +176,7 @@ elif menu == "📤 Scan & Upload":
     if file_aktif and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien: st.warning("⚠️ Isi Nama Perusahaan!")
         else:
-            with st.spinner("AI sedang memproses..."):
+            with st.spinner("AI sedang memproses dokumen..."):
                 hasil = proses_analisis_ai(file_aktif)
                 if "❌" in hasil: st.error(hasil)
                 else:
@@ -193,8 +184,8 @@ elif menu == "📤 Scan & Upload":
                     if sheet:
                         ts = time.strftime("%Y-%m-%d %H:%M:%S")
                         sheet.append_row([nama_klien, ts, id_doc or file_aktif.name, kategori, divisi, hasil])
-                        st.success("✅ Data Berhasil Disimpan!")
-                        time.sleep(1)
+                        st.success("✅ Data Berhasil Disimpan ke Google Sheets!")
+                        time.sleep(0.5)
                         st.rerun()
 
 # 9. FULL DATABASE

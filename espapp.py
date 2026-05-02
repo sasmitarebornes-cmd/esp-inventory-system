@@ -129,11 +129,18 @@ def proses_analisis_ai(file_input, client_name):
 # ============================================================
 # 6. SIDEBAR NAVIGATION
 # ============================================================
+# ============================================================
+# 6. SIDEBAR NAVIGATION
+# ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
         st.image("ESP LOGO ICON RED WHITE.png", width=180)
-    st.title("PT. ESP AGENT")
-    st.markdown("<span class='status-badge'>GEMINI 3 ACTIVE</span>", unsafe_allow_html=True)
+    
+    # Perubahan: Judul diganti menjadi PT. EKASARI PERKASA
+    st.title("PT. EKASARI PERKASA") 
+    
+    # Perubahan: Baris 'GEMINI 3 ACTIVE' sudah dihapus dari sini
+    
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")

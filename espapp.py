@@ -45,9 +45,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. INISIALISASI GEMINI API
+# 3. INISIALISASI GEMINI API (REVISI ANTI-404)
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    # Menggunakan nama model standar yang paling kompatibel
     model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
     st.error(f"Gagal Inisialisasi API: {e}")
@@ -70,7 +71,7 @@ def init_gsheet():
 
 sheet = init_gsheet()
 
-# 5. FUNGSI ANALISIS AI (OPTIMIZED FOR PAID TIER)
+# 5. FUNGSI ANALISIS AI (REVISI JALUR PRIORITAS & FALLBACK MODEL)
 def get_file_hash(file_input):
     file_input.seek(0)
     content = file_input.read()
@@ -110,7 +111,7 @@ def proses_analisis_ai(file_input):
             konten = [img_compressed, instruksi]
     except Exception as e: return f"Kesalahan membaca file: {e}"
 
-    # REVISI: JALUR PRIORITAS (PAID TIER)
+    # LOOP RETRY DENGAN FALLBACK UNTUK MENGATASI ERROR 404/429
     for i in range(3):
         try:
             response = model.generate_content(konten)
@@ -118,15 +119,25 @@ def proses_analisis_ai(file_input):
             return response.text
         except Exception as e:
             err_msg = str(e).lower()
+            
+            # Jika error 404 (Model Not Found), coba tembak manual dengan prefix
+            if "404" in err_msg:
+                try:
+                    fallback_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                    response = fallback_model.generate_content(konten)
+                    st.session_state.ai_cache[file_hash] = response.text
+                    return response.text
+                except: pass
+
+            # Jalur Prioritas: Waktu tunggu singkat untuk Tier Berbayar
             if any(x in err_msg for x in ["429", "quota", "overloaded"]):
-                # Waktu tunggu dipangkas dari 45 detik menjadi 2-5 detik untuk jalur berbayar
                 wait_time = 2 * (i + 1)
                 st.warning(f"🚀 Menghubungi Jalur Prioritas Google... ({i+1}/3)")
                 time.sleep(wait_time)
             else:
                 return f"❌ Error API: {e}"
             
-    return "❌ Server masih sibuk. Klik 'PROSES & SIMPAN' lagi bray."
+    return "❌ Gagal memproses setelah beberapa percobaan. Silakan coba lagi."
 
 # 6. SIDEBAR
 with st.sidebar:

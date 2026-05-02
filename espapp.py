@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. CSS CUSTOM (STYLING PREMIUM & MOBILE FRIENDLY)
+# 2. CSS CUSTOM (PREMIUM & MOBILE OPTIMIZED)
 # ============================================================
 st.markdown("""
     <style>
@@ -49,7 +49,6 @@ st.markdown("""
         border-radius: 12px;
         height: 3.5em;
         font-weight: bold;
-        transition: 0.3s;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -69,7 +68,8 @@ def init_gsheet():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        return gc.open("DATA INVENTORY PT.ESP").sheet1
+        sh = gc.open("DATA INVENTORY PT.ESP").sheet1
+        return sh
     except Exception as e:
         st.sidebar.error(f"Koneksi Gagal: {e}")
         return None
@@ -78,34 +78,29 @@ sheet = init_gsheet()
 API_KEYS = load_api_keys()
 
 # ============================================================
-# 4. AI AGENT ENGINE (DEEP ANALYSIS & AUTO-SORTING)
+# 4. AI AGENT ENGINE (DEEP ANALYSIS & COMPLETE EXTRACT)
 # ============================================================
 def analyze_document_deep(file_data, is_pdf=False, client_name=""):
-    """
-    Fitur AI Agent: Menganalisa dokumen secara lengkap & mendalam.
-    """
     instruksi = f"""
     Kamu adalah AI AGENT EXPERT INVENTORY untuk PT. EKASARI PERKASA (PT. ESP).
     Dokumen ini milik Klien: {client_name}.
     
-    Tugasmu:
-    1. ANALISA LENGKAP: Ekstrak No AWB, Invoice, Pengirim, Penerima, Deskripsi Barang Detail, Berat (Gross/Net), dan Koli/Quantity.
-    2. VALIDASI DATA: Cek jika ada ketidaksamaan data atau hal mencurigakan dalam dokumen.
-    3. AUTO-FOLDER LOGIC: Kelompokkan data ini ke dalam kategori operasional yang tepat.
-    4. RINGKASAN EKSEKUTIF: Berikan insight apakah dokumen ini layak diproses atau ada kekurangan dokumen pendukung.
+    Tugasmu adalah melakukan DEEP ANALYSIS:
+    1. EKSTRAK DETAIL: Ambil No AWB/Invoice, Nama Pengirim & Penerima, Deskripsi Barang Lengkap, Berat (Gross/Net), dan Quantity/Koli.
+    2. VALIDASI OPERASIONAL: Cek apakah ada data yang tidak sinkron atau mencurigakan.
+    3. REKOMENDASI: Berikan kesimpulan singkat apakah dokumen ini lengkap untuk proses logistik selanjutnya.
     
-    Format Output: Gunakan Markdown yang sangat rapi dan profesional.
+    Format Output: Gunakan Markdown yang rapi dengan poin-poin profesional.
     """
-    
     try:
-        if not API_KEYS: return "❌ API Key tidak ditemukan."
+        if not API_KEYS: return "❌ API Key tidak ditemukan bray."
         genai.configure(api_key=API_KEYS[0])
-        model = genai.GenerativeModel("gemini-1.5-flash") # Versi stabil & cepat
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         if is_pdf:
             content = [{"mime_type": "application/pdf", "data": file_data}, instruksi]
         else:
-            img = Image.open(file_data)
+            img = Image.open(io.BytesIO(file_data) if isinstance(file_data, bytes) else file_data)
             if img.mode != 'RGB': img = img.convert('RGB')
             content = [img, instruksi]
             
@@ -125,90 +120,103 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio("MAIN MENU", ["🏠 Dashboard", "📤 Deep Scan & Upload", "📑 Central Database"])
     st.markdown("---")
-    if st.button("🔄 System Reset"):
+    if st.button("🔄 System Refresh"):
         st.cache_resource.clear()
         st.rerun()
 
 # ============================================================
-# 6. DASHBOARD (INSIGHT & ANALYTICS)
+# 6. DASHBOARD (SINKRON DENGAN GAMBAR SHEETS)
 # ============================================================
 if menu == "🏠 Dashboard":
-    st.markdown('<div class="header-box"><h1>SMART DASHBOARD</h1><p>Monitoring Logistik & Inventory PT. ESP</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-box"><h1>SMART DASHBOARD</h1><p>PT. ESP - Inventory Monitoring</p></div>', unsafe_allow_html=True)
     if sheet:
-        data = pd.DataFrame(sheet.get_all_records())
-        if not data.empty:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Dokumen", len(data))
-            c2.metric("Klien Terdaftar", len(data['Nama Klien'].unique()))
-            c3.metric("Update Terakhir", data.iloc[-1]['Timestamp'].split()[0])
-            st.subheader("📊 5 Transaksi Terakhir")
-            st.table(data.tail(5)[['Nama Klien', 'Kategori', 'Divisi', 'Timestamp']])
+        raw_rows = sheet.get_all_records()
+        if raw_rows:
+            data = pd.DataFrame(raw_rows)
+            # Menggunakan nama kolom sesuai gambar lo bray
+            col_klien = "Nama Perusahaan"
+            if col_klien in data.columns:
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Dokumen", len(data))
+                c2.metric("Klien Terdaftar", len(data[col_klien].unique()))
+                c3.metric("Update", str(data.iloc[-1]['Tanggal']).split()[0])
+                
+                st.subheader("📊 Transaksi Terakhir")
+                st.table(data.tail(5)[[col_klien, 'Kategori', 'Tanggal']])
+        else:
+            st.info("👋 Sistem Aktif. Silakan upload dokumen pertama lo bray!")
 
 # ============================================================
-# 7. SCAN & UPLOAD (MODERN CAMERA TOGGLE)
+# 7. SCAN & UPLOAD (FIXED HEADER & CAMERA)
 # ============================================================
 elif menu == "📤 Deep Scan & Upload":
-    st.markdown('<div class="header-box"><h2>DEEP SCAN AGENT</h2><p>Analisis Otomatis & Penyimpanan Cloud</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-box"><h2>DEEP SCAN AGENT</h2><p>Auto-Folder & Deep Analysis</p></div>', unsafe_allow_html=True)
     
-    klien = st.text_input("🏢 Nama Perusahaan Klien (Auto-Folder)")
+    # Input sesuai kolom Sheets
+    nama_perusahaan = st.text_input("🏢 Nama Perusahaan (Klien)")
     c1, c2 = st.columns(2)
-    with c1: div = st.selectbox("📂 Divisi", ["EXPORT", "IMPORT"])
-    with c2: kat = st.selectbox("🏷️ Jenis", ["MAWB", "INVOICE", "PACKING LIST", "SURAT JALAN", "DOKAP"])
-    no_ref = st.text_input("🆔 Nomor Referensi (AWB/INV)")
+    with c1: divisi = st.selectbox("📂 divisi", ["EXPORT", "IMPORT"])
+    with c2: kategori = st.selectbox("🏷️ Kategori", ["MAWB", "INVOICE", "PACKING LIST", "SURAT JALAN", "DOKAP"])
+    id_doc = st.text_input("🆔 ID Document (AWB/INV)")
 
     st.markdown("---")
-    
-    # Input Selection
-    u_file = st.file_uploader("📁 Pilih Dokumen (PDF/Gambar)", type=["pdf", "jpg", "jpeg", "png"])
-    
-    st.markdown("<p style='text-align:center;'>— ATAU —</p>", unsafe_allow_html=True)
+    u_file = st.file_uploader("📁 Upload File (PDF/Gambar)", type=["pdf", "jpg", "jpeg", "png"])
     
     if "cam_on" not in st.session_state: st.session_state.cam_on = False
+    if st.button("📷 Aktifkan/Matikan Kamera"):
+        st.session_state.cam_on = not st.session_state.cam_on
+        st.rerun()
     
-    if not st.session_state.cam_on:
-        if st.button("📷 Buka Kamera Scan"):
-            st.session_state.cam_on = True
-            st.rerun()
-    else:
+    cam_shot = None
+    if st.session_state.cam_on:
         cam_shot = st.camera_input("Ambil Foto Dokumen")
-        if st.button("❌ Tutup Kamera"):
-            st.session_state.cam_on = False
-            st.rerun()
         
-    source = u_file if u_file else (cam_shot if st.session_state.cam_on else None)
+    source = u_file if u_file else cam_shot
 
-    if source and st.button("🚀 JALANKAN AI ANALISIS", type="primary"):
-        if not klien:
-            st.error("⚠️ Nama Klien harus diisi bray!")
+    if source and st.button("🚀 PROSES DOKUMEN SEKARANG", type="primary"):
+        if not nama_perusahaan:
+            st.error("⚠️ Nama Perusahaan wajib diisi buat Auto-Folder ya sayank!")
         else:
-            with st.spinner("🤖 AI Agent sedang membedah dokumen..."):
+            with st.spinner("🤖 AI sedang bekerja keras..."):
                 is_pdf = (getattr(source, 'type', '') == "application/pdf")
-                raw_data = source.read() if is_pdf else source
+                content = source.read()
                 
-                hasil_analisis = analyze_document_deep(raw_data, is_pdf, klien)
+                # Eksekusi AI Deep Analysis
+                keterangan_ai = analyze_document_deep(content, is_pdf, nama_perusahaan)
                 
-                if "❌" not in hasil_analisis:
-                    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                    # Simpan ke Database Sheets
-                    sheet.append_row([klien, ts, no_ref if no_ref else "Auto", kat, div, hasil_analisis])
-                    st.success(f"✅ Dokumen {klien} Berhasil Dianalisa & Disimpan!")
-                    st.markdown(hasil_analisis)
+                if "❌" not in keterangan_ai:
+                    tanggal_skrg = time.strftime("%Y-%m-%d %H:%M:%S")
+                    # Urutan: Nama Perusahaan, Tanggal, ID Document, Kategori, divisi, Keterangan
+                    sheet.append_row([
+                        nama_perusahaan, 
+                        tanggal_skrg, 
+                        id_doc if id_doc else "Auto", 
+                        kategori, 
+                        divisi, 
+                        keterangan_ai
+                    ])
+                    st.success(f"✅ Data {nama_perusahaan} Berhasil Disimpan!")
+                    st.markdown(keterangan_ai)
                     st.session_state.cam_on = False
                 else:
-                    st.error(hasil_analisis)
+                    st.error(keterangan_ai)
 
 # ============================================================
-# 8. DATABASE (FILTER & SEARCH)
+# 8. DATABASE (SINKRON DENGAN GAMBAR SHEETS)
 # ============================================================
 elif menu == "📑 Central Database":
-    st.header("📊 Database Logistik Terpusat")
+    st.header("📑 Database Inventory ESP")
     if sheet:
-        df = pd.DataFrame(sheet.get_all_records())
-        search = st.text_input("🔍 Cari Klien, Nomor AWB, atau Hasil Analisis")
-        if search:
-            df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
-        st.dataframe(df, use_container_width=True)
-        
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Database", csv, "Database_ESP.csv", "text/csv")
-    
+        raw_rows = sheet.get_all_records()
+        if raw_rows:
+            df = pd.DataFrame(raw_rows)
+            search = st.text_input("🔍 Cari (Nama Klien / No AWB)")
+            if search:
+                df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+            st.dataframe(df, use_container_width=True)
+            
+            # Export
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Database CSV", csv, "Database_ESP.csv", "text/csv")
+        else:
+            st.warning("Database masih kosong ayank beib.")

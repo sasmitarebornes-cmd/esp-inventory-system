@@ -234,7 +234,7 @@ Instruksi:
                 validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
         
         # 2. Validasi Divisi (ERROR CRITICAL)
-        if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
+        if extracted.get("divisi") in ["EXPORT", "IMPORT" ,"DOMESTIK"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
                     "field": "Divisi", 

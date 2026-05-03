@@ -10,7 +10,6 @@ import hashlib
 import io
 import mimetypes
 import json
-import re
 from datetime import datetime
 
 # 🔹 Safe import untuk Drive API
@@ -60,6 +59,7 @@ st.markdown("""
     .warning-box { background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; border-radius: 5px; margin: 10px 0; }
     .error-box { background-color: #f8d7da; border-left: 5px solid #dc3545; padding: 15px; border-radius: 5px; margin: 10px 0; }
     .success-box { background-color: #d4edda; border-left: 5px solid #28a745; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    .title-logo { display: flex; align-items: center; gap: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -74,25 +74,22 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
-# ✅ PERBAIKAN: Gunakan model yang stabil (Gemini 3 belum tersedia publik, ganti ke 1.5/2.0)
 MODEL_LIST = [
-    "gemini-1.5-flash",             # Model stabil utama
-    "gemini-1.5-pro",               # Akurasi tinggi
-    "gemini-2.0-flash-exp"          # Model terbaru jika tersedia
-    "gemini-3-flash",               # Model utama tahun 2026
-    "gemini-3-flash-preview",       # Versi preview terbaru
-    "gemini-3.1-flash-lite-preview",# Versi hemat kuota
-    "gemini-2.5-pro"                # Fallback seri 2.5
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-exp"
+    "gemini-3-flash",                # Model utama tahun 2026
+    "gemini-3-flash-preview",        # Versi preview terbaru
+    "gemini-3.1-flash-lite-preview", # Versi hemat kuota
+    "gemini-2.5-pro"                 # Fallback seri 2.5
 ]
-
-
 
 if not API_KEYS:
     st.error("❌ Tidak ada GOOGLE_API_KEY ditemukan di Streamlit Secrets!")
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS & DRIVE (FIXED)
+# 4. KONEKSI GOOGLE SHEETS & DRIVE
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -106,7 +103,6 @@ def init_gsheet():
         ]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        # Return sheet AND credentials
         return gc.open("DATA INVENTORY PT.ESP").sheet1, creds
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
@@ -114,7 +110,6 @@ def init_gsheet():
 
 sheet, drive_creds = init_gsheet()
 
-# Simpan credentials ke session state global
 if drive_creds:
     st.session_state.drive_creds = drive_creds
 
@@ -142,7 +137,7 @@ def build_content(file_input):
         "Kamu adalah AI Inventory PT ESP. "
         "Ekstrak informasi penting dari dokumen ini: "
         "Semua detail dokumen, "
-        "Sajikan secara ringkas dan terstruktur. "
+        "Sajikan secara ringkas dan terstruktur."
         "Lakukan deep analyze."
     )
     if file_input.type == "application/pdf":
@@ -154,31 +149,25 @@ def build_content(file_input):
         return [Image.open(buf), instruksi]
 
 # ============================================================
-# 6. FUNGSI VALIDASI KOMPREHENSIF DOKUMEN
+# 6. FUNGSI VALIDASI DOKUMEN
 # ============================================================
 def validate_document_fields(file_input, user_company, user_divisi, user_kategori, user_id_doc):
-    """
-    Analisis dokumen dan validasi SEMUA field input user.
-    """
     try:
         file_input.seek(0)
         
         validation_prompt = f"""
 Kamu adalah validator dokumen logistik PT. Ekasari Perkasa.
-Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni (tanpa markdown):
+Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni:
 
 {{
   "company_name": "Nama perusahaan/klien yang tertera",
-  "divisi": "EXPORT atau IMPORT (PEB=EXPORT, PIB=IMPORT)",
+  "divisi": "EXPORT atau IMPORT",
   "document_type": "Salah satu: MAWB, Invoice, Surat Jalan, DOKAP, Perizinan, PEB, PIB, SPPB, Lainnya",
-  "document_id": "Nomor dokumen utama (No AWB, Invoice, dll)",
+  "document_id": "Nomor dokumen utama",
   "confidence": "HIGH atau LOW"
 }}
 
-Instruksi:
-1. Output HANYA JSON.
-2. Divisi: PEB/MAWB Export = EXPORT, PIB/MAWB Import = IMPORT.
-3. Jika tidak ada info, gunakan null.
+Output HANYA JSON tanpa penjelasan.
 """
         
         if file_input.type == "application/pdf":
@@ -191,7 +180,6 @@ Instruksi:
             konten = [img, validation_prompt]
         
         extracted = None
-        # ✅ FIX: Gunakan fallback model seperti fungsi utama
         for api_key in API_KEYS:
             genai.configure(api_key=api_key)
             for model_name in MODEL_LIST:
@@ -200,7 +188,6 @@ Instruksi:
                     response = mdl.generate_content(konten)
                     hasil = response.text.strip()
                     
-                    # Bersihkan markdown jika ada
                     if "```json" in hasil:
                         hasil = hasil.split("```json")[1].split("```")[0].strip()
                     elif "```" in hasil:
@@ -211,14 +198,13 @@ Instruksi:
                 except Exception as e:
                     err = str(e).lower()
                     if "404" in err or "not found" in err:
-                        continue # Coba model berikutnya
+                        continue
                     raise
             if extracted: break
             
         if not extracted:
             raise ValueError("AI gagal mengembalikan JSON valid")
             
-        # --- LOGIKA VALIDASI ---
         validation_result = {
             "extracted": extracted,
             "mismatches": [],
@@ -226,15 +212,13 @@ Instruksi:
             "warnings": []
         }
         
-        # 1. Validasi Nama Perusahaan (WARNING)
         if extracted.get("company_name") and extracted["company_name"] not in [None, "null"]:
             doc_company = extracted["company_name"].upper()
             user_company_clean = user_company.upper().strip()
             if user_company_clean and doc_company not in user_company_clean and user_company_clean not in doc_company:
                 validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
         
-        # 2. Validasi Divisi (ERROR CRITICAL)
-        if extracted.get("divisi") in ["EXPORT", "IMPORT" ,"DOMESTIK"]:
+        if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
                     "field": "Divisi", 
@@ -244,7 +228,6 @@ Instruksi:
                 })
                 validation_result["can_proceed"] = False
                 
-        # 3. Validasi Kategori (ERROR CRITICAL)
         valid_cats = ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"]
         if extracted.get("document_type") in valid_cats:
             if extracted["document_type"] != user_kategori:
@@ -256,7 +239,6 @@ Instruksi:
                 })
                 validation_result["can_proceed"] = False
                 
-        # 4. Validasi ID Document (WARNING)
         if extracted.get("document_id") and extracted["document_id"] not in [None, "null"]:
             user_id_clean = user_id_doc.strip() if user_id_doc else ""
             if user_id_clean and extracted["document_id"].strip().upper() != user_id_clean.upper():
@@ -273,7 +255,7 @@ Instruksi:
         }
 
 # ============================================================
-# 7. GOOGLE DRIVE UPLOAD (FINAL FIX)
+# 7. GOOGLE DRIVE UPLOAD
 # ============================================================
 def upload_to_drive(file_input, company_name, category, doc_id=None):
     if not DRIVE_LIB_AVAILABLE:
@@ -281,19 +263,17 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
     
     creds = st.session_state.get("drive_creds")
     if not creds:
-        return None, "❌ Kredensial Drive tidak tersedia. Pastikan service account benar."
+        return None, "❌ Kredensial Drive tidak tersedia."
     
     try:
-        # ✅ FIX: Ambil Folder ID dari secrets
         folder_id = st.secrets.get("DRIVE_FOLDER_ID")
         
         if not folder_id:
-            return None, "❌ ERROR: DRIVE_FOLDER_ID kosong di Streamlit Secrets! Isi ID folder Anda."
+            return None, "❌ DRIVE_FOLDER_ID tidak ditemukan di Secrets!"
         
         if folder_id == "root":
-            return None, "❌ ERROR: DRIVE_FOLDER_ID tidak boleh 'root'. Service account tidak punya kuota root. Masukkan ID folder yang di-share ke Service Account."
+            return None, "❌ Folder ID tidak boleh 'root'. Share folder ke service account!"
         
-        # Prepare file data
         file_input.seek(0)
         file_bytes = file_input.read()
         filename = file_input.name or f"DOC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -308,7 +288,7 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
         ]
         
         drive_service = build("drive", "v3", credentials=creds)
-        parent_id = folder_id  # Mulai dari folder yang di-share
+        parent_id = folder_id
         
         for folder_name in folder_structure:
             query = (
@@ -349,7 +329,7 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg or "do not have storage quota" in error_msg:
-            return None, "❌ Service account tidak punya kuota. Pastikan Anda men-share folder pribadi Anda ke email Service Account!"
+            return None, "❌ Service account tidak punya kuota. Share folder ke email service account!"
         return None, f" Drive Upload Error: {error_msg}"
 
 # ============================================================
@@ -400,19 +380,7 @@ with st.sidebar:
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v9.1 - Full Auto-Validation & Stable Models")
-    
-    st.markdown("---")
-    st.markdown("### 🔧 System Status")
-    if drive_creds:
-        st.success("✅ Drive credentials tersedia")
-    else:
-        st.error(" Drive credentials gagal")
-    
-    if "DRIVE_FOLDER_ID" in st.secrets:
-        st.success(f"✅ Folder ID: `{st.secrets['DRIVE_FOLDER_ID'][:15]}...`")
-    else:
-        st.error("❌ Folder ID hilang di Secrets")
+    st.caption("Build v9.2 - Logo & UI Fixed")
 
 # ============================================================
 # 10. MAIN APP LOGIC
@@ -440,7 +408,16 @@ if menu == "🏠 Dashboard":
         except: st.info("Dashboard siap!")
 
 elif menu == "📤 Scan & Upload":
-    st.header("📤 Ekasari Perkasa Inventory Dashboard")
+    # ✅ LOGO DI SEBELAH TITLE
+    st.markdown('<div class="title-logo">', unsafe_allow_html=True)
+    col_logo2, col_title = st.columns([1, 8])
+    with col_logo2:
+        if os.path.exists("ESP LOGO ICON RED WHITE.png"):
+            st.image("ESP LOGO ICON RED WHITE.png", width=60)
+    with col_title:
+        st.header("Ekasari Perkasa Inventory Dashboard")
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     c_a, c_b = st.columns(2)
     with c_a:
         nama_klien = st.text_input("Nama Perusahaan")
@@ -450,7 +427,7 @@ elif menu == "📤 Scan & Upload":
         id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
     st.markdown("---")
-    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", " Gunakan Kamera"], horizontal=True)
+    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
     
     u_file = None
     
@@ -460,23 +437,21 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah Anda menekan tombol di bawah")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    upload_to_drive_option = st.checkbox("️ Simpan file fisik ke Google Drive", value=True)
+    upload_to_drive_option = st.checkbox("🗂️ Simpan file fisik ke Google Drive", value=True)
 
-    if u_file and st.button(" PROSES & SIMPAN", use_container_width=True, type="primary"):
+    if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
+            st.warning("⚠️ Isi Nama Perusahaannya Ya Sayank muach ")
         else:
-            # 1. VALIDASI OTOMATIS
-            with st.spinner(" Memvalidasi kesesuaian data dokumen..."):
+            with st.spinner("🔍 Memvalidasi kesesuaian data dokumen..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
             
-            # 2. CEK HASIL VALIDASI
             if validation["mismatches"]:
                 st.markdown('<div class="error-box">', unsafe_allow_html=True)
                 st.markdown("### 🚨 PERINGATAN: Ketidaksesuaian Data")
                 
                 mismatch_df = pd.DataFrame(validation["mismatches"])
-                mismatch_df["Status"] = mismatch_df["severity"].apply(lambda x: "❌ ERROR" if x == "ERROR" else "️ WARNING")
+                mismatch_df["Status"] = mismatch_df["severity"].apply(lambda x: "❌ ERROR" if x == "ERROR" else "⚠️ WARNING")
                 st.table(mismatch_df[["field", "user_input", "detected", "Status"]].rename(columns={
                     "field": "Field", "user_input": "Input Anda", "detected": "Terdeteksi AI", "Status": "Status"
                 }))
@@ -491,7 +466,7 @@ elif menu == "📤 Scan & Upload":
                     st.error(" UPLOAD DIBLOKIR: Perbaiki Divisi atau Kategori Dokumen yang salah!")
                     st.stop()
                 else:
-                    st.warning("️ Terdapat perbedaan minor. Pastikan data sudah benar sebelum lanjut.")
+                    st.warning("⚠️ Terdapat perbedaan minor. Pastikan data sudah benar sebelum lanjut.")
                     if not st.checkbox("✅ Saya yakin data sudah benar, lanjutkan upload"):
                         st.stop()
 
@@ -500,7 +475,6 @@ elif menu == "📤 Scan & Upload":
                 for w in validation["warnings"]: st.markdown(f"- {w}")
                 st.markdown("</div>", unsafe_allow_html=True)
             
-            # 3. PROSES AI & SIMPAN
             with st.spinner("System Sedang Menganalisis Data..."):
                 hasil = proses_analisis_ai(u_file)
                 
@@ -523,15 +497,14 @@ elif menu == "📤 Scan & Upload":
                     st.success("✅ Berhasil disimpan ke Database!")
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    with st.expander("📋 Hasil Analisis AI"):
+                    # ✅ HANYA TAMPILKAN HASIL ANALISIS, TANPA JSON DEBUG
+                    with st.expander("📋 Hasil Analisis "):
                         st.info(hasil)
-                        if validation["extracted"] and "error" not in validation["extracted"]:
-                            st.json(validation["extracted"])
                 else:
                     st.error(hasil)
 
 elif menu == "📑 Full Database":
-    st.header(" Full Inventory Log")
+    st.header("📊 Full Inventory Log")
     if sheet:
         try:
             data = pd.DataFrame(sheet.get_all_records())

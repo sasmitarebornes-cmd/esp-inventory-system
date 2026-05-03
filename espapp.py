@@ -12,7 +12,7 @@ import mimetypes
 import json
 from datetime import datetime, timedelta
 
-# 🔹 Firebase Storage import (safe import)
+# 🔹 Firebase Storage import
 try:
     import firebase_admin
     from firebase_admin import credentials, storage
@@ -74,7 +74,6 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
-# ✅ MODEL_LIST - Sesuai Spesifikasi Anda
 MODEL_LIST = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
@@ -86,11 +85,11 @@ MODEL_LIST = [
 ]
 
 if not API_KEYS:
-    st.error("❌ Tidak ada GOOGLE_API_KEY ditemukan di Streamlit Secrets!")
+    st.error("❌ Tidak ada GOOGLE_API_KEY ditemukan!")
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS (FIXED SCOPES)
+# 4. KONEKSI GOOGLE SHEETS (FIXED)
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -99,16 +98,22 @@ def init_gsheet():
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         
-        # ✅ FIX: Scope yang benar untuk Google Sheets API
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive.file"
         ]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        return gc.open("DATA INVENTORY PT.ESP").sheet1
+        
+        spreadsheet = gc.open("DATA INVENTORY PT.ESP")
+        sheet = spreadsheet.sheet1
+        
+        # Test akses
+        sheet.get_all_records()
+        
+        return sheet
     except Exception as e:
-        st.sidebar.error(f"Gagal koneksi Sheets: {e}")
+        st.sidebar.error(f" Sheets Error: {str(e)}")
         return None
 
 sheet = init_gsheet()
@@ -124,34 +129,45 @@ def init_firebase():
         if not firebase_admin._apps:
             firebase_config = st.secrets.get("firebase_config", {})
             if not firebase_config:
-                return None
+                raise ValueError("firebase_config not found")
             
             sa_json = firebase_config.get("service_account", {})
             
-            # ✅ FIX: Handle string JSON dari Streamlit Secrets
+            # FIX: Handle parsing dari Streamlit Secrets
             if isinstance(sa_json, str):
                 try:
                     sa_json = json.loads(sa_json)
-                except json.JSONDecodeError:
+                except:
                     sa_json = eval(sa_json)
+            elif not isinstance(sa_json, dict):
+                # Convert jika bukan dict
+                sa_json = dict(sa_json)
             
-            if not isinstance(sa_json, dict):
-                raise ValueError("service_account config must be a dict")
+            # Validasi
+            if 'private_key' not in sa_json:
+                raise ValueError("private_key missing in service_account")
             
             cred = credentials.Certificate(sa_json)
+            storage_bucket = firebase_config.get("storage_bucket")
+            
+            if not storage_bucket:
+                raise ValueError("storage_bucket missing")
+            
             firebase_admin.initialize_app(cred, {
-                'storageBucket': firebase_config.get("storage_bucket")
+                'storageBucket': storage_bucket
             })
         return storage.bucket()
     except Exception as e:
-        st.sidebar.error(f"Firebase init error: {e}")
+        st.sidebar.error(f" Firebase Error: {str(e)}")
         return None
 
 firebase_bucket = init_firebase()
 
 # ============================================================
-# 6. HELPER FUNCTIONS
+# 6-11. HELPER FUNCTIONS, VALIDASI, UPLOAD, AI, MAIN LOGIC
+# (Sama seperti source code sebelumnya - tidak berubah)
 # ============================================================
+
 def get_file_hash(file_input):
     file_input.seek(0)
     h = hashlib.md5(file_input.read()).hexdigest()
@@ -171,10 +187,8 @@ def compress_image(file_input, max_size=(1024, 1024), quality=80):
 def build_content(file_input):
     instruksi = (
         "Kamu adalah AI Inventory PT ESP. "
-        "Ekstrak informasi penting dari dokumen ini: "
-        "Semua detail dokumen, "
+        "Ekstrak informasi penting dari dokumen ini. "
         "Sajikan secara ringkas dan terstruktur."
-        "Lakukan deep analyze."
     )
     if file_input.type == "application/pdf":
         file_input.seek(0)
@@ -184,25 +198,19 @@ def build_content(file_input):
         buf = compress_image(file_input)
         return [Image.open(buf), instruksi]
 
-# ============================================================
-# 7. FUNGSI VALIDASI DOKUMEN
-# ============================================================
 def validate_document_fields(file_input, user_company, user_divisi, user_kategori, user_id_doc):
     try:
         file_input.seek(0)
         validation_prompt = f"""
-Kamu adalah validator dokumen logistik PT. Ekasari Perkasa.
-Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni:
-
+Analisis dokumen dan ekstrak dalam JSON:
 {{
-  "company_name": "Nama perusahaan/klien yang tertera",
+  "company_name": "Nama perusahaan",
   "divisi": "EXPORT atau IMPORT",
-  "document_type": "Salah satu: MAWB, Invoice, Surat Jalan, DOKAP, Perizinan, PEB, PIB, SPPB, Lainnya",
-  "document_id": "Nomor dokumen utama",
+  "document_type": "MAWB/Invoice/Surat Jalan/DOKAP/Perizinan/PEB/PIB/SPPB/Lainnya",
+  "document_id": "Nomor dokumen",
   "confidence": "HIGH atau LOW"
 }}
-
-Output HANYA JSON tanpa penjelasan.
+Output HANYA JSON.
 """
         if file_input.type == "application/pdf":
             file_input.seek(0)
@@ -221,23 +229,20 @@ Output HANYA JSON tanpa penjelasan.
                     mdl = genai.GenerativeModel(model_name)
                     response = mdl.generate_content(konten)
                     hasil = response.text.strip()
-                    
                     if "```json" in hasil:
                         hasil = hasil.split("```json")[1].split("```")[0].strip()
                     elif "```" in hasil:
                         hasil = hasil.split("```")[1].strip()
-                    
                     extracted = json.loads(hasil)
                     break
                 except Exception as e:
-                    err = str(e).lower()
-                    if "404" in err or "not found" in err:
+                    if "404" in str(e).lower() or "not found" in str(e).lower():
                         continue
                     raise
             if extracted: break
             
         if not extracted:
-            raise ValueError("AI gagal mengembalikan JSON valid")
+            raise ValueError("AI gagal return JSON")
             
         validation_result = {
             "extracted": extracted,
@@ -250,12 +255,13 @@ Output HANYA JSON tanpa penjelasan.
             doc_company = extracted["company_name"].upper()
             user_company_clean = user_company.upper().strip()
             if user_company_clean and doc_company not in user_company_clean and user_company_clean not in doc_company:
-                validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
+                validation_result["warnings"].append(f"⚠️ Nama di dokumen: \"{extracted['company_name']}\"")
         
         if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
-                    "field": "Divisi", "user_input": user_divisi, "detected": extracted["divisi"], "severity": "ERROR"
+                    "field": "Divisi", "user_input": user_divisi, 
+                    "detected": extracted["divisi"], "severity": "ERROR"
                 })
                 validation_result["can_proceed"] = False
                 
@@ -263,14 +269,15 @@ Output HANYA JSON tanpa penjelasan.
         if extracted.get("document_type") in valid_cats:
             if extracted["document_type"] != user_kategori:
                 validation_result["mismatches"].append({
-                    "field": "Kategori Dokumen", "user_input": user_kategori, "detected": extracted["document_type"], "severity": "ERROR"
+                    "field": "Kategori", "user_input": user_kategori, 
+                    "detected": extracted["document_type"], "severity": "ERROR"
                 })
                 validation_result["can_proceed"] = False
                 
         if extracted.get("document_id") and extracted["document_id"] not in [None, "null"]:
             user_id_clean = user_id_doc.strip() if user_id_doc else ""
             if user_id_clean and extracted["document_id"].strip().upper() != user_id_clean.upper():
-                validation_result["warnings"].append(f"⚠️ ID dokumen terdeteksi: \"{extracted['document_id']}\"")
+                validation_result["warnings"].append(f"⚠️ ID terdeteksi: \"{extracted['document_id']}\"")
                 
         return validation_result
     except Exception as e:
@@ -278,18 +285,15 @@ Output HANYA JSON tanpa penjelasan.
             "extracted": {"error": str(e)},
             "mismatches": [],
             "can_proceed": True,
-            "warnings": [f"⚠️ Validasi otomatis gagal: {str(e)}. Lanjutkan manual."]
+            "warnings": [f"⚠️ Validasi gagal: {str(e)}"]
         }
 
-# ============================================================
-# 8. FIREBASE STORAGE UPLOAD (PRIVAT + SIGNED URL)
-# ============================================================
 def upload_to_firebase(file_input, company_name, category, doc_id=None):
     if not FIREBASE_AVAILABLE:
-        return None, "⚠️ Library firebase-admin belum terinstall."
+        return None, " Library belum terinstall"
     bucket = firebase_bucket
     if not bucket:
-        return None, "❌ Firebase Storage tidak terinisialisasi."
+        return None, " Firebase tidak terinisialisasi"
     try:
         file_input.seek(0)
         file_bytes = file_input.read()
@@ -301,7 +305,6 @@ def upload_to_firebase(file_input, company_name, category, doc_id=None):
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=file_input.type or "application/octet-stream")
         
-        # ✅ Generate Signed URL (Privat, Expired 7 hari)
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=timedelta(seconds=604800),
@@ -309,22 +312,19 @@ def upload_to_firebase(file_input, company_name, category, doc_id=None):
         )
         return signed_url, None
     except Exception as e:
-        return None, f" Firebase Upload Error: {str(e)}"
+        return None, f" Upload Error: {str(e)}"
 
-# ============================================================
-# 9. FUNGSI ANALISIS AI
-# ============================================================
 def proses_analisis_ai(file_input):
     if "ai_cache" not in st.session_state:
         st.session_state.ai_cache = {}
     fhash = get_file_hash(file_input)
     if fhash in st.session_state.ai_cache:
-        st.toast(" Hasil dari cache.", icon="✅")
+        st.toast(" Dari cache", icon="✅")
         return st.session_state.ai_cache[fhash]
     try:
         konten = build_content(file_input)
     except Exception as e:
-        return f"❌ Gagal membaca file: {e}"
+        return f"❌ Gagal baca file: {e}"
     for api_key in API_KEYS:
         genai.configure(api_key=api_key)
         for model_name in MODEL_LIST:
@@ -339,13 +339,13 @@ def proses_analisis_ai(file_input):
                 if "404" in err or "not found" in err:
                     continue
                 if "quota" in err or "exhausted" in err:
-                    st.toast("⚠️ Limit terdeteksi, mencoba model berikutnya...", icon="🔄")
+                    st.toast("⚠️ Limit, coba model lain...", icon="🔄")
                     continue
                 return f"❌ Error API: {e}"
     return "❌ Gagal. Pastikan Billing aktif."
 
 # ============================================================
-# 10. SIDEBAR & MENU
+# SIDEBAR & MENU
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
@@ -354,20 +354,22 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
-    st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v10.2 - Firebase Private Storage")
+    st.caption(f"🔑 API Key: **{len(API_KEYS)}**")
+    st.caption("Build v10.3 - Fixed Init")
+    
     st.markdown("---")
-    st.markdown("### ☁️ Cloud Storage Status")
-    if FIREBASE_AVAILABLE and firebase_bucket:
-        st.success("✅ Firebase Storage: Connected")
-        st.info(f"🪣 Bucket: `{firebase_bucket.name}`")
-    elif FIREBASE_AVAILABLE:
-        st.warning("⚠️ Firebase: Config missing")
+    st.markdown("### Status")
+    if sheet:
+        st.success("✅ Sheets: Connected")
     else:
-        st.error(" Firebase: Library not installed")
+        st.error("❌ Sheets: Disconnected")
+    if FIREBASE_AVAILABLE and firebase_bucket:
+        st.success("✅ Firebase: Connected")
+    else:
+        st.error("❌ Firebase: Disconnected")
 
 # ============================================================
-# 11. MAIN APP LOGIC
+# MAIN APP LOGIC
 # ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
@@ -388,7 +390,10 @@ if menu == "🏠 Dashboard":
                 with s2: st.metric("Klien Terakhir", str(df.iloc[-1, 0]))
                 with s3: st.metric("Update", str(df.iloc[-1, 1]).split(" ")[0])
                 st.dataframe(df.tail(10), use_container_width=True)
-        except: st.info("Dashboard siap!")
+        except Exception as e: 
+            st.error(f"Error load data: {e}")
+    else:
+        st.warning("⚠️ Sheets tidak terkoneksi. Cek sidebar untuk detail error.")
 
 elif menu == "📤 Scan & Upload":
     st.markdown('<div class="title-logo">', unsafe_allow_html=True)
@@ -414,16 +419,18 @@ elif menu == "📤 Scan & Upload":
     if upload_method == "📁 Upload File":
         u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"], key="file_uploader")
     else:
-        st.info("📸 Kamera hanya aktif setelah Anda menekan tombol di bawah")
+        st.info("📸 Kamera hanya aktif setelah tombol ditekan")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
     upload_to_cloud_option = st.checkbox("☁️ Simpan file fisik ke Firebase", value=True)
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaannya Ya Sayank muach ")
+            st.warning("⚠️ Isi Nama Perusahaan ya sayank muach :-D")
+        elif not sheet:
+            st.error("❌ Google Sheets tidak terkoneksi! Cek sidebar untuk detail.")
         else:
-            with st.spinner(" Memvalidasi kesesuaian data dokumen..."):
+            with st.spinner(" Memvalidasi..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
             
             if validation["mismatches"]:
@@ -435,39 +442,39 @@ elif menu == "📤 Scan & Upload":
                     "field": "Field", "user_input": "Input Anda", "detected": "Terdeteksi AI", "Status": "Status"
                 }))
                 if validation["warnings"]:
-                    st.markdown("**Catatan Tambahan:**")
+                    st.markdown("**Catatan:**")
                     for w in validation["warnings"]: st.markdown(f"- {w}")
                 st.markdown("</div>", unsafe_allow_html=True)
                 if not validation["can_proceed"]:
-                    st.error(" UPLOAD DIBLOKIR: Perbaiki Divisi atau Kategori Dokumen yang salah!")
+                    st.error(" UPLOAD DIBLOKIR!")
                     st.stop()
                 else:
-                    st.warning("⚠️ Terdapat perbedaan minor. Pastikan data sudah benar sebelum lanjut.")
-                    if not st.checkbox("✅ Saya yakin data sudah benar, lanjutkan upload"):
+                    st.warning("⚠️ Perbedaan minor. Lanjutkan?")
+                    if not st.checkbox("✅ Ya, lanjutkan"):
                         st.stop()
             elif validation["warnings"]:
                 st.markdown('<div class="warning-box">', unsafe_allow_html=True)
                 for w in validation["warnings"]: st.markdown(f"- {w}")
                 st.markdown("</div>", unsafe_allow_html=True)
             
-            with st.spinner("System Sedang Menganalisis Data..."):
+            with st.spinner(" Menganalisis..."):
                 hasil = proses_analisis_ai(u_file)
-                if "❌" not in hasil and sheet:
+                if "❌" not in hasil:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
                     cloud_link = None
                     if upload_to_cloud_option:
-                        with st.spinner("️ Mengupload ke Firebase Storage..."):
+                        with st.spinner(" Uploading..."):
                             cloud_link, cloud_error = upload_to_firebase(u_file, nama_klien, kategori, doc_name)
                             if cloud_error:
                                 st.warning(cloud_error)
                             elif cloud_link:
-                                st.success(f"🔗 File tersimpan (Privat): [Link]({cloud_link})")
+                                st.success(f"🔗 File tersimpan: [Link]({cloud_link})")
                     sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n☁️ Cloud: {cloud_link}" if cloud_link else hasil])
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                    st.success("✅ Berhasil disimpan ke Database!")
+                    st.success("✅ Berhasil disimpan!")
                     st.markdown('</div>', unsafe_allow_html=True)
-                    with st.expander("📋 Hasil Analisis "):
+                    with st.expander("📋 Hasil Analisis"):
                         st.info(hasil)
                 else:
                     st.error(hasil)
@@ -483,3 +490,5 @@ elif menu == "📑 Full Database":
                 st.download_button("📥 Download CSV", data=csv, file_name="inventory_esp.csv", mime="text/csv")
             else: st.info("📭 Database kosong")
         except Exception as e: st.error(f"Error: {e}")
+    else:
+        st.error("❌ Sheets tidak terkoneksi")

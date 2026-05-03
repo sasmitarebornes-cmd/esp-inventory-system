@@ -170,7 +170,7 @@ def proses_analisis_ai(file_input):
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
         st.image("ESP LOGO ICON RED WHITE.png", width=160)
-    st.title("PT. ESP DATA INVENTORY")
+    st.title("PT. EKASARI PERKASA DATABASE")
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
@@ -200,10 +200,10 @@ if menu == "🏠 Dashboard":
         except: st.info("Dashboard siap!")
 
 elif menu == "📤 Scan & Upload":
-    st.header("📤 Input Dokumen Inventory")
+    st.header("Ekasari Perkasa Inventory Dashboard")
     c_a, c_b = st.columns(2)
     with c_a:
-        nama_klien = st.text_input("Nama Perusahaan (Klien)")
+        nama_klien = st.text_input("Nama Perusahaan ")
         divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT"])
     with c_b:
         kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "PEB" , "PIB" , "Lainnya"])
@@ -213,7 +213,7 @@ elif menu == "📤 Scan & Upload":
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank ")
+            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
         else:
             with st.spinner("AI Menganalisis dengan Gemini 3..."):
                 hasil = proses_analisis_ai(u_file)

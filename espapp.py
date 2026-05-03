@@ -10,15 +10,15 @@ import hashlib
 import io
 import mimetypes
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# 🔹 Safe import untuk Drive API
+# 🔹 Firebase Storage import (safe import)
 try:
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaIoBaseUpload
-    DRIVE_LIB_AVAILABLE = True
+    import firebase_admin
+    from firebase_admin import credentials, storage
+    FIREBASE_AVAILABLE = True
 except ImportError:
-    DRIVE_LIB_AVAILABLE = False
+    FIREBASE_AVAILABLE = False
 
 # ============================================================
 # 1. SETUP HALAMAN
@@ -74,10 +74,11 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
+# ✅ MODEL_LIST - Sesuai Spesifikasi Anda
 MODEL_LIST = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
-    "gemini-2.0-flash-exp"
+    "gemini-2.0-flash-exp",
     "gemini-3-flash",                # Model utama tahun 2026
     "gemini-3-flash-preview",        # Versi preview terbaru
     "gemini-3.1-flash-lite-preview", # Versi hemat kuota
@@ -89,7 +90,7 @@ if not API_KEYS:
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS & DRIVE
+# 4. KONEKSI GOOGLE SHEETS
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -97,24 +98,47 @@ def init_gsheet():
         creds_info = dict(st.secrets["gcp_service_account"])
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        scope = ["https://spreadsheets.google.com/feeds"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
-        return gc.open("DATA INVENTORY PT.ESP").sheet1, creds
+        return gc.open("DATA INVENTORY PT.ESP").sheet1
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
-        return None, None
+        return None
 
-sheet, drive_creds = init_gsheet()
-
-if drive_creds:
-    st.session_state.drive_creds = drive_creds
+sheet = init_gsheet()
 
 # ============================================================
-# 5. HELPER FUNCTIONS
+# 5. FIREBASE STORAGE INITIALIZATION
+# ============================================================
+@st.cache_resource
+def init_firebase():
+    if not FIREBASE_AVAILABLE:
+        return None
+    try:
+        if not firebase_admin._apps:
+            firebase_config = st.secrets.get("firebase_config", {})
+            if not firebase_config:
+                return None
+            
+            sa_json = firebase_config.get("service_account", {})
+            if isinstance(sa_json, str):
+                import json as json_lib
+                sa_json = json_lib.loads(sa_json)
+            
+            cred = credentials.Certificate(sa_json)
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': firebase_config.get("storage_bucket")
+            })
+        return storage.bucket()
+    except Exception as e:
+        st.sidebar.error(f"Firebase init error: {e}")
+        return None
+
+firebase_bucket = init_firebase()
+
+# ============================================================
+# 6. HELPER FUNCTIONS
 # ============================================================
 def get_file_hash(file_input):
     file_input.seek(0)
@@ -149,7 +173,7 @@ def build_content(file_input):
         return [Image.open(buf), instruksi]
 
 # ============================================================
-# 6. FUNGSI VALIDASI DOKUMEN
+# 7. FUNGSI VALIDASI DOKUMEN
 # ============================================================
 def validate_document_fields(file_input, user_company, user_divisi, user_kategori, user_id_doc):
     try:
@@ -218,7 +242,7 @@ Output HANYA JSON tanpa penjelasan.
             if user_company_clean and doc_company not in user_company_clean and user_company_clean not in doc_company:
                 validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
         
-        if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
+        if extracted.get("divisi") in ["EXPORT", "IMPORT" , "DOMESTIK"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
                     "field": "Divisi", 
@@ -255,85 +279,49 @@ Output HANYA JSON tanpa penjelasan.
         }
 
 # ============================================================
-# 7. GOOGLE DRIVE UPLOAD
+# 8. FIREBASE STORAGE UPLOAD FUNCTION (PRIVAT & SECURE)
 # ============================================================
-def upload_to_drive(file_input, company_name, category, doc_id=None):
-    if not DRIVE_LIB_AVAILABLE:
-        return None, "⚠️ Library google-api-python-client belum terinstall."
+def upload_to_firebase(file_input, company_name, category, doc_id=None):
+    """
+    Upload file ke Firebase Storage.
+    File di-set ke PRIVAT (bukan publik).
+    Menghasilkan Signed URL (Aman, Expired setelah 7 hari).
+    """
+    if not FIREBASE_AVAILABLE:
+        return None, "⚠️ Library firebase-admin belum terinstall."
     
-    creds = st.session_state.get("drive_creds")
-    if not creds:
-        return None, "❌ Kredensial Drive tidak tersedia."
+    bucket = firebase_bucket
+    if not bucket:
+        return None, "❌ Firebase Storage tidak terinisialisasi."
     
     try:
-        folder_id = st.secrets.get("DRIVE_FOLDER_ID")
-        
-        if not folder_id:
-            return None, "❌ DRIVE_FOLDER_ID tidak ditemukan di Secrets!"
-        
-        if folder_id == "root":
-            return None, "❌ Folder ID tidak boleh 'root'. Share folder ke service account!"
-        
         file_input.seek(0)
         file_bytes = file_input.read()
         filename = file_input.name or f"DOC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        mime_type = file_input.type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
         
+        # Struktur Folder: Company/Year/Date/Category/Filename
         now = datetime.now()
-        folder_structure = [
-            company_name.strip(),
-            str(now.year),
-            now.strftime("%Y-%m-%d"),
-            category
-        ]
+        folder_path = f"{company_name.strip()}/{now.year}/{now.strftime('%Y-%m-%d')}/{category}"
+        blob_path = f"{folder_path}/{doc_id}_{filename}" if doc_id else f"{folder_path}/{filename}"
         
-        drive_service = build("drive", "v3", credentials=creds)
-        parent_id = folder_id
+        # Upload file (Otomatis Private di Firebase)
+        blob = bucket.blob(blob_path)
+        blob.upload_from_string(file_bytes, content_type=file_input.type or "application/octet-stream")
         
-        for folder_name in folder_structure:
-            query = (
-                f"mimeType='application/vnd.google-apps.folder' "
-                f"and name='{folder_name}' "
-                f"and '{parent_id}' in parents "
-                f"and trashed=false"
-            )
-            results = drive_service.files().list(
-                q=query, spaces="drive", fields="files(id, name)", supportsAllDrives=True
-            ).execute()
-            folders = results.get("files", [])
-            
-            if folders:
-                parent_id = folders[0]["id"]
-            else:
-                folder_metadata = {
-                    "name": folder_name,
-                    "mimeType": "application/vnd.google-apps.folder",
-                    "parents": [parent_id]
-                }
-                folder = drive_service.files().create(
-                    body=folder_metadata, fields="id", supportsAllDrives=True
-                ).execute()
-                parent_id = folder.get("id")
+        # Generate Signed URL (Link aman dengan Token, Expired setelah 7 hari)
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(seconds=604800),  # 7 Hari (604800 detik)
+            method="GET"
+        )
         
-        file_metadata = {
-            "name": f"{doc_id}_{filename}" if doc_id else filename,
-            "parents": [parent_id]
-        }
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-        uploaded_file = drive_service.files().create(
-            body=file_metadata, media_body=media, fields="id, webViewLink", supportsAllDrives=True
-        ).execute()
-        
-        return uploaded_file.get("webViewLink"), None
+        return signed_url, None
         
     except Exception as e:
-        error_msg = str(e)
-        if "storageQuotaExceeded" in error_msg or "do not have storage quota" in error_msg:
-            return None, "❌ Service account tidak punya kuota. Share folder ke email service account!"
-        return None, f" Drive Upload Error: {error_msg}"
+        return None, f" Firebase Upload Error: {str(e)}"
 
 # ============================================================
-# 8. FUNGSI ANALISIS AI
+# 9. FUNGSI ANALISIS AI
 # ============================================================
 def proses_analisis_ai(file_input):
     if "ai_cache" not in st.session_state:
@@ -341,7 +329,7 @@ def proses_analisis_ai(file_input):
     fhash = get_file_hash(file_input)
     
     if fhash in st.session_state.ai_cache:
-        st.toast("⚡ Hasil dari cache.", icon="✅")
+        st.toast(" Hasil dari cache.", icon="✅")
         return st.session_state.ai_cache[fhash]
 
     try:
@@ -370,20 +358,30 @@ def proses_analisis_ai(file_input):
     return "❌ Gagal. Pastikan Billing aktif."
 
 # ============================================================
-# 9. SIDEBAR & MENU
+# 10. SIDEBAR & MENU
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
         st.image("ESP LOGO ICON RED WHITE.png", width=160)
     st.title("PT. EKASARI PERKASA DATABASE")
     st.markdown("---")
-    menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
+    menu = st.radio("MENU UTAMA", [" Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v9.2 - Logo & UI Fixed")
+    st.caption("Build v10.1 - Private Firebase Storage")
+    
+    st.markdown("---")
+    st.markdown("### ☁️ Cloud Storage Status")
+    if FIREBASE_AVAILABLE and firebase_bucket:
+        st.success("✅ Firebase Storage: Connected")
+        st.info(f"🪣 Bucket: `{firebase_bucket.name}`")
+    elif FIREBASE_AVAILABLE:
+        st.warning("⚠️ Firebase: Config missing")
+    else:
+        st.error(" Firebase: Library not installed")
 
 # ============================================================
-# 10. MAIN APP LOGIC
+# 11. MAIN APP LOGIC
 # ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
@@ -408,7 +406,6 @@ if menu == "🏠 Dashboard":
         except: st.info("Dashboard siap!")
 
 elif menu == "📤 Scan & Upload":
-    # ✅ LOGO DI SEBELAH TITLE
     st.markdown('<div class="title-logo">', unsafe_allow_html=True)
     col_logo2, col_title = st.columns([1, 8])
     with col_logo2:
@@ -421,13 +418,13 @@ elif menu == "📤 Scan & Upload":
     c_a, c_b = st.columns(2)
     with c_a:
         nama_klien = st.text_input("Nama Perusahaan")
-        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT" , "DOMESTIK"])
+        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT", "DOMESTIK"])
     with c_b:
-        kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "PEB" , "PIB" , "SPPB" , "Lainnya"])
+        kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"])
         id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
     st.markdown("---")
-    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
+    upload_method = st.radio(" Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
     
     u_file = None
     
@@ -437,13 +434,14 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah Anda menekan tombol di bawah")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    upload_to_drive_option = st.checkbox("🗂️ Simpan file fisik ke Google Drive", value=True)
+    # ✅ Checkbox label diupdate ke Firebase
+    upload_to_cloud_option = st.checkbox("☁️ Simpan file fisik ke Firebase", value=True)
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
             st.warning("⚠️ Isi Nama Perusahaannya Ya Sayank muach ")
         else:
-            with st.spinner("🔍 Memvalidasi kesesuaian data dokumen..."):
+            with st.spinner(" Memvalidasi kesesuaian data dokumen..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
             
             if validation["mismatches"]:
@@ -482,22 +480,21 @@ elif menu == "📤 Scan & Upload":
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
                     
-                    drive_link = None
-                    if upload_to_drive_option:
-                        with st.spinner("📤 Mengupload ke Google Drive..."):
-                            drive_link, drive_error = upload_to_drive(u_file, nama_klien, kategori, doc_name)
-                            if drive_error:
-                                st.warning(drive_error)
-                            elif drive_link:
-                                st.success(f"🔗 File tersimpan di Drive: [Link]({drive_link})")
+                    cloud_link = None
+                    if upload_to_cloud_option:
+                        with st.spinner("️ Mengupload ke Firebase Storage..."):
+                            cloud_link, cloud_error = upload_to_firebase(u_file, nama_klien, kategori, doc_name)
+                            if cloud_error:
+                                st.warning(cloud_error)
+                            elif cloud_link:
+                                st.success(f"🔗 File tersimpan (Privat): [Link]({cloud_link})")
                     
-                    sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n📎 Drive: {drive_link}" if drive_link else hasil])
+                    sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n☁️ Cloud: {cloud_link}" if cloud_link else hasil])
                     
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
                     st.success("✅ Berhasil disimpan ke Database!")
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # ✅ HANYA TAMPILKAN HASIL ANALISIS, TANPA JSON DEBUG
                     with st.expander("📋 Hasil Analisis "):
                         st.info(hasil)
                 else:

@@ -102,7 +102,7 @@ def get_or_create_folder(folder_name, parent_id=None):
 
 def upload_to_drive(file_content, file_name, mime_type, client_name):
     # ID Folder "EKASARI DATA INVENTORY" dari screenshot drive sas.png
-    ROOT_ID = "143j0uV_4rR8S9E-Qp9E9E9E9E9E9E9E9" # <--- GANTI DENGAN ID FOLDER ANDA (ada di URL browser saat buka folder tsb)
+    ROOT_ID = "13wUu0PasVjyvVL9d4UEQkC_5EFddF2h3" # <--- GANTI DENGAN ID FOLDER ANDA (ada di URL browser saat buka folder tsb)
     
     year_folder = time.strftime("%Y")
     month_folder = time.strftime("%B")

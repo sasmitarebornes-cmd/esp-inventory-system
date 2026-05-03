@@ -74,15 +74,14 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
-# ✅ MODEL_LIST - Sesuai Spesifikasi Anda
 MODEL_LIST = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
     "gemini-2.0-flash-exp",
-    "gemini-3-flash",                # Model utama tahun 2026
-    "gemini-3-flash-preview",        # Versi preview terbaru
-    "gemini-3.1-flash-lite-preview", # Versi hemat kuota
-    "gemini-2.5-pro"                 # Fallback seri 2.5
+    "gemini-3-flash",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-pro"
 ]
 
 if not API_KEYS:
@@ -90,7 +89,7 @@ if not API_KEYS:
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS
+# 4. KONEKSI GOOGLE SHEETS (FIXED SCOPES)
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -98,7 +97,12 @@ def init_gsheet():
         creds_info = dict(st.secrets["gcp_service_account"])
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-        scope = ["https://spreadsheets.google.com/feeds"]
+        
+        # ✅ FIX: Gunakan scope yang benar untuk Google Sheets API
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive.file"
+        ]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
         return gc.open("DATA INVENTORY PT.ESP").sheet1
@@ -109,7 +113,7 @@ def init_gsheet():
 sheet = init_gsheet()
 
 # ============================================================
-# 5. FIREBASE STORAGE INITIALIZATION
+# 5. FIREBASE STORAGE INITIALIZATION (FIXED PARSING)
 # ============================================================
 @st.cache_resource
 def init_firebase():
@@ -122,9 +126,17 @@ def init_firebase():
                 return None
             
             sa_json = firebase_config.get("service_account", {})
+            
+            # ✅ FIX: Handle jika service_account terbaca sebagai string JSON
             if isinstance(sa_json, str):
-                import json as json_lib
-                sa_json = json_lib.loads(sa_json)
+                try:
+                    sa_json = json.loads(sa_json)
+                except json.JSONDecodeError:
+                    # Fallback: coba eval jika JSON parsing gagal
+                    sa_json = eval(sa_json)
+            
+            if not isinstance(sa_json, dict):
+                raise ValueError("service_account config must be a dict")
             
             cred = credentials.Certificate(sa_json)
             firebase_admin.initialize_app(cred, {
@@ -242,7 +254,7 @@ Output HANYA JSON tanpa penjelasan.
             if user_company_clean and doc_company not in user_company_clean and user_company_clean not in doc_company:
                 validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
         
-        if extracted.get("divisi") in ["EXPORT", "IMPORT" , "DOMESTIK"]:
+        if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
                     "field": "Divisi", 
@@ -282,11 +294,6 @@ Output HANYA JSON tanpa penjelasan.
 # 8. FIREBASE STORAGE UPLOAD FUNCTION (PRIVAT & SECURE)
 # ============================================================
 def upload_to_firebase(file_input, company_name, category, doc_id=None):
-    """
-    Upload file ke Firebase Storage.
-    File di-set ke PRIVAT (bukan publik).
-    Menghasilkan Signed URL (Aman, Expired setelah 7 hari).
-    """
     if not FIREBASE_AVAILABLE:
         return None, "⚠️ Library firebase-admin belum terinstall."
     
@@ -299,19 +306,17 @@ def upload_to_firebase(file_input, company_name, category, doc_id=None):
         file_bytes = file_input.read()
         filename = file_input.name or f"DOC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         
-        # Struktur Folder: Company/Year/Date/Category/Filename
         now = datetime.now()
         folder_path = f"{company_name.strip()}/{now.year}/{now.strftime('%Y-%m-%d')}/{category}"
         blob_path = f"{folder_path}/{doc_id}_{filename}" if doc_id else f"{folder_path}/{filename}"
         
-        # Upload file (Otomatis Private di Firebase)
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=file_input.type or "application/octet-stream")
         
-        # Generate Signed URL (Link aman dengan Token, Expired setelah 7 hari)
+        # Generate Signed URL (Privat, Expired setelah 7 hari)
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=timedelta(seconds=604800),  # 7 Hari (604800 detik)
+            expiration=timedelta(seconds=604800),
             method="GET"
         )
         
@@ -368,7 +373,7 @@ with st.sidebar:
     menu = st.radio("MENU UTAMA", [" Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v10.1 - Private Firebase Storage")
+    st.caption("Build v10.2 - Fixed Scopes & Firebase Parsing")
     
     st.markdown("---")
     st.markdown("### ☁️ Cloud Storage Status")
@@ -434,7 +439,6 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah Anda menekan tombol di bawah")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    # ✅ Checkbox label diupdate ke Firebase
     upload_to_cloud_option = st.checkbox("☁️ Simpan file fisik ke Firebase", value=True)
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):

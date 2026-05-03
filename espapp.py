@@ -74,6 +74,7 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
+# ✅ MODEL_LIST - Sesuai Spesifikasi Anda
 MODEL_LIST = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
@@ -98,7 +99,7 @@ def init_gsheet():
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         
-        # ✅ FIX: Gunakan scope yang benar untuk Google Sheets API
+        # ✅ FIX: Scope yang benar untuk Google Sheets API
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive.file"
@@ -127,12 +128,11 @@ def init_firebase():
             
             sa_json = firebase_config.get("service_account", {})
             
-            # ✅ FIX: Handle jika service_account terbaca sebagai string JSON
+            # ✅ FIX: Handle string JSON dari Streamlit Secrets
             if isinstance(sa_json, str):
                 try:
                     sa_json = json.loads(sa_json)
                 except json.JSONDecodeError:
-                    # Fallback: coba eval jika JSON parsing gagal
                     sa_json = eval(sa_json)
             
             if not isinstance(sa_json, dict):
@@ -190,7 +190,6 @@ def build_content(file_input):
 def validate_document_fields(file_input, user_company, user_divisi, user_kategori, user_id_doc):
     try:
         file_input.seek(0)
-        
         validation_prompt = f"""
 Kamu adalah validator dokumen logistik PT. Ekasari Perkasa.
 Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni:
@@ -205,7 +204,6 @@ Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni:
 
 Output HANYA JSON tanpa penjelasan.
 """
-        
         if file_input.type == "application/pdf":
             file_input.seek(0)
             pdf_data = file_input.read()
@@ -257,10 +255,7 @@ Output HANYA JSON tanpa penjelasan.
         if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
-                    "field": "Divisi", 
-                    "user_input": user_divisi, 
-                    "detected": extracted["divisi"], 
-                    "severity": "ERROR"
+                    "field": "Divisi", "user_input": user_divisi, "detected": extracted["divisi"], "severity": "ERROR"
                 })
                 validation_result["can_proceed"] = False
                 
@@ -268,10 +263,7 @@ Output HANYA JSON tanpa penjelasan.
         if extracted.get("document_type") in valid_cats:
             if extracted["document_type"] != user_kategori:
                 validation_result["mismatches"].append({
-                    "field": "Kategori Dokumen", 
-                    "user_input": user_kategori, 
-                    "detected": extracted["document_type"], 
-                    "severity": "ERROR"
+                    "field": "Kategori Dokumen", "user_input": user_kategori, "detected": extracted["document_type"], "severity": "ERROR"
                 })
                 validation_result["can_proceed"] = False
                 
@@ -281,7 +273,6 @@ Output HANYA JSON tanpa penjelasan.
                 validation_result["warnings"].append(f"⚠️ ID dokumen terdeteksi: \"{extracted['document_id']}\"")
                 
         return validation_result
-        
     except Exception as e:
         return {
             "extracted": {"error": str(e)},
@@ -291,21 +282,18 @@ Output HANYA JSON tanpa penjelasan.
         }
 
 # ============================================================
-# 8. FIREBASE STORAGE UPLOAD FUNCTION (PRIVAT & SECURE)
+# 8. FIREBASE STORAGE UPLOAD (PRIVAT + SIGNED URL)
 # ============================================================
 def upload_to_firebase(file_input, company_name, category, doc_id=None):
     if not FIREBASE_AVAILABLE:
         return None, "⚠️ Library firebase-admin belum terinstall."
-    
     bucket = firebase_bucket
     if not bucket:
         return None, "❌ Firebase Storage tidak terinisialisasi."
-    
     try:
         file_input.seek(0)
         file_bytes = file_input.read()
         filename = file_input.name or f"DOC_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        
         now = datetime.now()
         folder_path = f"{company_name.strip()}/{now.year}/{now.strftime('%Y-%m-%d')}/{category}"
         blob_path = f"{folder_path}/{doc_id}_{filename}" if doc_id else f"{folder_path}/{filename}"
@@ -313,15 +301,13 @@ def upload_to_firebase(file_input, company_name, category, doc_id=None):
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=file_input.type or "application/octet-stream")
         
-        # Generate Signed URL (Privat, Expired setelah 7 hari)
+        # ✅ Generate Signed URL (Privat, Expired 7 hari)
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=timedelta(seconds=604800),
             method="GET"
         )
-        
         return signed_url, None
-        
     except Exception as e:
         return None, f" Firebase Upload Error: {str(e)}"
 
@@ -332,16 +318,13 @@ def proses_analisis_ai(file_input):
     if "ai_cache" not in st.session_state:
         st.session_state.ai_cache = {}
     fhash = get_file_hash(file_input)
-    
     if fhash in st.session_state.ai_cache:
         st.toast(" Hasil dari cache.", icon="✅")
         return st.session_state.ai_cache[fhash]
-
     try:
         konten = build_content(file_input)
     except Exception as e:
         return f"❌ Gagal membaca file: {e}"
-
     for api_key in API_KEYS:
         genai.configure(api_key=api_key)
         for model_name in MODEL_LIST:
@@ -359,7 +342,6 @@ def proses_analisis_ai(file_input):
                     st.toast("⚠️ Limit terdeteksi, mencoba model berikutnya...", icon="🔄")
                     continue
                 return f"❌ Error API: {e}"
-
     return "❌ Gagal. Pastikan Billing aktif."
 
 # ============================================================
@@ -370,11 +352,10 @@ with st.sidebar:
         st.image("ESP LOGO ICON RED WHITE.png", width=160)
     st.title("PT. EKASARI PERKASA DATABASE")
     st.markdown("---")
-    menu = st.radio("MENU UTAMA", [" Dashboard", "📤 Scan & Upload", "📑 Full Database"])
+    menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v10.2 - Fixed Scopes & Firebase Parsing")
-    
+    st.caption("Build v10.2 - Firebase Private Storage")
     st.markdown("---")
     st.markdown("### ☁️ Cloud Storage Status")
     if FIREBASE_AVAILABLE and firebase_bucket:
@@ -398,7 +379,6 @@ if menu == "🏠 Dashboard":
         st.markdown("<h1 style='margin:0; color:#0e2135;'>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
         st.markdown("<p style='margin:0; color:#666;'>Sistem Inventory Data Otomatis</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
     if sheet:
         try:
             df = pd.DataFrame(sheet.get_all_records())
@@ -430,9 +410,7 @@ elif menu == "📤 Scan & Upload":
 
     st.markdown("---")
     upload_method = st.radio(" Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
-    
     u_file = None
-    
     if upload_method == "📁 Upload File":
         u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"], key="file_uploader")
     else:
@@ -451,19 +429,15 @@ elif menu == "📤 Scan & Upload":
             if validation["mismatches"]:
                 st.markdown('<div class="error-box">', unsafe_allow_html=True)
                 st.markdown("### 🚨 PERINGATAN: Ketidaksesuaian Data")
-                
                 mismatch_df = pd.DataFrame(validation["mismatches"])
                 mismatch_df["Status"] = mismatch_df["severity"].apply(lambda x: "❌ ERROR" if x == "ERROR" else "⚠️ WARNING")
                 st.table(mismatch_df[["field", "user_input", "detected", "Status"]].rename(columns={
                     "field": "Field", "user_input": "Input Anda", "detected": "Terdeteksi AI", "Status": "Status"
                 }))
-                
                 if validation["warnings"]:
                     st.markdown("**Catatan Tambahan:**")
                     for w in validation["warnings"]: st.markdown(f"- {w}")
-                
                 st.markdown("</div>", unsafe_allow_html=True)
-                
                 if not validation["can_proceed"]:
                     st.error(" UPLOAD DIBLOKIR: Perbaiki Divisi atau Kategori Dokumen yang salah!")
                     st.stop()
@@ -471,7 +445,6 @@ elif menu == "📤 Scan & Upload":
                     st.warning("⚠️ Terdapat perbedaan minor. Pastikan data sudah benar sebelum lanjut.")
                     if not st.checkbox("✅ Saya yakin data sudah benar, lanjutkan upload"):
                         st.stop()
-
             elif validation["warnings"]:
                 st.markdown('<div class="warning-box">', unsafe_allow_html=True)
                 for w in validation["warnings"]: st.markdown(f"- {w}")
@@ -479,11 +452,9 @@ elif menu == "📤 Scan & Upload":
             
             with st.spinner("System Sedang Menganalisis Data..."):
                 hasil = proses_analisis_ai(u_file)
-                
                 if "❌" not in hasil and sheet:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
-                    
                     cloud_link = None
                     if upload_to_cloud_option:
                         with st.spinner("️ Mengupload ke Firebase Storage..."):
@@ -492,13 +463,10 @@ elif menu == "📤 Scan & Upload":
                                 st.warning(cloud_error)
                             elif cloud_link:
                                 st.success(f"🔗 File tersimpan (Privat): [Link]({cloud_link})")
-                    
                     sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n☁️ Cloud: {cloud_link}" if cloud_link else hasil])
-                    
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
                     st.success("✅ Berhasil disimpan ke Database!")
                     st.markdown('</div>', unsafe_allow_html=True)
-                    
                     with st.expander("📋 Hasil Analisis "):
                         st.info(hasil)
                 else:

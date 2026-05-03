@@ -1,6 +1,8 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 import google.generativeai as genai
 from PIL import Image
 import os
@@ -8,6 +10,8 @@ import time
 import pandas as pd
 import hashlib
 import io
+import mimetypes
+from datetime import datetime
 
 # ============================================================
 # 1. SETUP HALAMAN
@@ -72,7 +76,7 @@ if not API_KEYS:
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS
+# 4. KONEKSI GOOGLE SHEETS & DRIVE
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -86,6 +90,8 @@ def init_gsheet():
         ]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
+        # Simpan creds untuk Drive API
+        st.session_state.drive_creds = creds
         return gc.open("DATA INVENTORY PT.ESP").sheet1
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
@@ -120,21 +126,103 @@ def build_content(file_input):
         "Sajikan secara ringkas dan terstruktur."
         "Lakukan deep analyze."
     )
-    if file_input.type == "application/pdf":
+    if hasattr(file_input, 'type') and file_input.type == "application/pdf":
         file_input.seek(0)
         pdf_data = file_input.read()
         return [{"mime_type": "application/pdf", "data": pdf_data}, instruksi]
     else:
-        file_input.seek(0)
-        return [compress_image(file_input), instruksi]
+        # Handle both UploadedFile and Image from camera
+        if isinstance(file_input, Image.Image):
+            buf = io.BytesIO()
+            file_input.save(buf, format="PNG")
+            buf.seek(0)
+            return [compress_image(buf), instruksi]
+        else:
+            file_input.seek(0)
+            return [compress_image(file_input), instruksi]
 
 # ============================================================
-# 6. FUNGSI ANALISIS AI
+# 6. GOOGLE DRIVE UPLOAD FUNCTION (FITUR BARU)
+# ============================================================
+def upload_to_drive(file_input, company_name, category, doc_id=None):
+    """
+    Upload file ke Google Drive dengan struktur folder:
+    Company Name / Year / Date / Document Type / filename
+    """
+    try:
+        creds = st.session_state.get("drive_creds")
+        if not creds:
+            return None, "❌ Kredensial Drive tidak tersedia"
+        
+        # Prepare file data
+        if isinstance(file_input, Image.Image):
+            # From camera input
+            buf = io.BytesIO()
+            file_input.save(buf, format="PNG")
+            buf.seek(0)
+            file_bytes = buf.read()
+            filename = f"CAM_{datetime.now().strftime('%H%M%S')}.png"
+            mime_type = "image/png"
+        else:
+            # From file upload
+            file_input.seek(0)
+            file_bytes = file_input.read()
+            filename = file_input.name
+            mime_type = file_input.type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        
+        # Build folder path: Company/Year/Date/Category
+        now = datetime.now()
+        folder_structure = [
+            company_name.strip(),
+            str(now.year),
+            now.strftime("%Y-%m-%d"),
+            category
+        ]
+        
+        # Initialize Drive API
+        drive_service = build("drive", "v3", credentials=creds)
+        
+        # Create folders recursively
+        parent_id = "root"  # Start from root, atau ganti dengan folder ID spesifik
+        for folder_name in folder_structure:
+            # Check if folder exists
+            query = f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and '{parent_id}' in parents and trashed=false"
+            results = drive_service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
+            folders = results.get("files", [])
+            
+            if folders:
+                parent_id = folders[0]["id"]
+            else:
+                # Create new folder
+                folder_metadata = {
+                    "name": folder_name,
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "parents": [parent_id]
+                }
+                folder = drive_service.files().create(body=folder_metadata, fields="id").execute()
+                parent_id = folder.get("id")
+        
+        # Upload file to final folder
+        file_metadata = {
+            "name": f"{doc_id}_{filename}" if doc_id else filename,
+            "parents": [parent_id]
+        }
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
+        uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+        
+        return uploaded_file.get("webViewLink"), None
+        
+    except Exception as e:
+        return None, f"❌ Drive Upload Error: {str(e)}"
+
+# ============================================================
+# 7. FUNGSI ANALISIS AI
 # ============================================================
 def proses_analisis_ai(file_input):
     if "ai_cache" not in st.session_state:
         st.session_state.ai_cache = {}
-    fhash = get_file_hash(file_input)
+    fhash = get_file_hash(file_input) if not isinstance(file_input, Image.Image) else hashlib.md5(str(file_input.tobytes()).encode()).hexdigest()
+    
     if fhash in st.session_state.ai_cache:
         st.toast("⚡ Hasil dari cache.", icon="✅")
         return st.session_state.ai_cache[fhash]
@@ -165,7 +253,7 @@ def proses_analisis_ai(file_input):
     return "❌ Gagal. Pastikan Billing aktif dan model didukung di tahun 2026."
 
 # ============================================================
-# 7. SIDEBAR & MENU (Bagian selanjutnya tetap sama)
+# 8. SIDEBAR & MENU
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
@@ -175,8 +263,11 @@ with st.sidebar:
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v8.0 - 2026 Gemini 3 Engine")
+    st.caption("Build v8.1 - 2026 Gemini 3 Engine + Drive Integration")
 
+# ============================================================
+# 9. MAIN APP LOGIC
+# ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
     col_logo, col_text = st.columns([1, 5])
@@ -194,8 +285,8 @@ if menu == "🏠 Dashboard":
             if not df.empty:
                 s1, s2, s3 = st.columns(3)
                 with s1: st.metric("Total Dokumen", f"{len(df)} Unit")
-                with s2: st.metric("Klien Terakhir", str(df.iloc[-1, 0]))
-                with s3: st.metric("Update", str(df.iloc[-1, 1]).split(" ")[0])
+                with s2: st.metric("Klien Terakhir", str(df.iloc[-1, 0]) if len(df) > 0 else "-")
+                with s3: st.metric("Update", str(df.iloc[-1, 1]).split(" ")[0] if len(df) > 0 else "-")
                 st.dataframe(df.tail(10), use_container_width=True)
         except: st.info("Dashboard siap!")
 
@@ -209,19 +300,53 @@ elif menu == "📤 Scan & Upload":
         kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "PEB" , "PIB" , "SPPB" , "Lainnya"])
         id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
-    u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"])
+    # 🔧 FITUR BARU: Toggle antara File Upload atau Camera
+    st.markdown("---")
+    upload_method = st.radio("📥 Metode Upload", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
+    
+    u_file = None
+    camera_image = None
+    
+    if upload_method == "📁 Upload File":
+        u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"], key="file_uploader")
+    else:
+        # 🔧 Camera hanya aktif saat opsi ini dipilih (tidak otomatis menyala)
+        st.info("💡 Klik tombol di bawah untuk mengaktifkan kamera")
+        camera_image = st.camera_input("📸 Ambil Foto Dokumen", key="camera_input")
+        if camera_image:
+            # Convert camera input to PIL Image for processing
+            camera_image.seek(0)
+            u_file = Image.open(camera_image)
+            st.success("✅ Foto berhasil diambil!")
+
+    # Checkbox untuk opsi upload ke Drive
+    upload_to_drive_option = st.checkbox("🗂️ Simpan file fisik ke Google Drive", value=True)
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaannya Ya Sayank muach :-D")
+            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
         else:
             with st.spinner("AI Menganalisis dengan Gemini 3..."):
                 hasil = proses_analisis_ai(u_file)
                 if "❌" not in hasil and sheet:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                    sheet.append_row([nama_klien, ts, id_doc if id_doc else u_file.name, kategori, divisi, hasil])
-                    st.success("✅ Berhasil disimpan!")
-                    st.info(hasil)
+                    doc_name = id_doc if id_doc else (u_file.name if hasattr(u_file, 'name') else f"CAM_{datetime.now().strftime('%H%M%S')}")
+                    
+                    # ✅ Upload ke Google Drive jika dicentang
+                    drive_link = None
+                    if upload_to_drive_option:
+                        with st.spinner("📤 Mengupload file ke Google Drive..."):
+                            drive_link, drive_error = upload_to_drive(u_file, nama_klien, kategori, doc_name)
+                            if drive_error:
+                                st.warning(drive_error)
+                            elif drive_link:
+                                st.success(f"🔗 File tersimpan di Drive: [Link]({drive_link})")
+                    
+                    # ✅ Simpan metadata ke Google Sheets
+                    sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n📎 Drive: {drive_link}" if drive_link else hasil])
+                    st.success("✅ Berhasil disimpan ke Database!")
+                    with st.expander("📋 Hasil Analisis AI"):
+                        st.info(hasil)
                 else:
                     st.error(hasil)
 
@@ -230,5 +355,17 @@ elif menu == "📑 Full Database":
     if sheet:
         try:
             data = pd.DataFrame(sheet.get_all_records())
-            st.dataframe(data, use_container_width=True)
-        except Exception as e: st.error(f"Error: {e}")
+            if not data.empty:
+                # Filter & Search
+                search_term = st.text_input("🔍 Cari dokumen...", placeholder="Nama perusahaan / ID / Kategori")
+                if search_term:
+                    data = data[data.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)]
+                st.dataframe(data, use_container_width=True)
+                
+                # Download option
+                csv = data.to_csv(index=False, encoding="utf-8-sig")
+                st.download_button("📥 Download sebagai CSV", data=csv, file_name="inventory_esp.csv", mime="text/csv")
+            else:
+                st.info("📭 Belum ada data dalam database")
+        except Exception as e: 
+            st.error(f"Error: {e}")

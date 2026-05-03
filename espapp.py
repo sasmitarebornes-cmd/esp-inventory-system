@@ -444,7 +444,7 @@ elif menu == "📤 Scan & Upload":
     c_a, c_b = st.columns(2)
     with c_a:
         nama_klien = st.text_input("Nama Perusahaan")
-        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT"])
+        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT" , "DOMESTIK"])
     with c_b:
         kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "PEB" , "PIB" , "SPPB" , "Lainnya"])
         id_doc = st.text_input("ID Document (No AWB/Invoice)")

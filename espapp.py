@@ -9,6 +9,7 @@ import pandas as pd
 import hashlib
 import io
 import mimetypes
+import json
 import re
 from datetime import datetime
 
@@ -56,29 +57,9 @@ st.markdown("""
         box-shadow: 2px 2px 10px rgba(0,0,0,0.05) !important;
         border-left: 5px solid #0e2135 !important;
     }
-    .warning-box {
-        background-color: #fff3cd;
-        border-left: 5px solid #ffc107;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 10px 0;
-    }
-    .error-box {
-        background-color: #f8d7da;
-        border-left: 5px solid #dc3545;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 10px 0;
-    }
-    .success-box {
-        background-color: #d4edda;
-        border-left: 5px solid #28a745;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 10px 0;
-    }
-    .validation-table td { padding: 8px 12px; }
-    .validation-table th { background-color: #0e2135; color: white; }
+    .warning-box { background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    .error-box { background-color: #f8d7da; border-left: 5px solid #dc3545; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    .success-box { background-color: #d4edda; border-left: 5px solid #28a745; padding: 15px; border-radius: 5px; margin: 10px 0; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -93,12 +74,18 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
+# ✅ PERBAIKAN: Gunakan model yang stabil (Gemini 3 belum tersedia publik, ganti ke 1.5/2.0)
 MODEL_LIST = [
-    "gemini-3-flash",
-    "gemini-3-flash-preview", 
-    "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-pro"
+    "gemini-1.5-flash",             # Model stabil utama
+    "gemini-1.5-pro",               # Akurasi tinggi
+    "gemini-2.0-flash-exp"          # Model terbaru jika tersedia
+    "gemini-3-flash",               # Model utama tahun 2026
+    "gemini-3-flash-preview",       # Versi preview terbaru
+    "gemini-3.1-flash-lite-preview",# Versi hemat kuota
+    "gemini-2.5-pro"                # Fallback seri 2.5
 ]
+
+
 
 if not API_KEYS:
     st.error("❌ Tidak ada GOOGLE_API_KEY ditemukan di Streamlit Secrets!")
@@ -119,6 +106,7 @@ def init_gsheet():
         ]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
+        # Return sheet AND credentials
         return gc.open("DATA INVENTORY PT.ESP").sheet1, creds
     except Exception as e:
         st.sidebar.error(f"Gagal koneksi Sheets: {e}")
@@ -126,7 +114,7 @@ def init_gsheet():
 
 sheet, drive_creds = init_gsheet()
 
-# Simpan credentials ke session state untuk Drive API
+# Simpan credentials ke session state global
 if drive_creds:
     st.session_state.drive_creds = drive_creds
 
@@ -166,41 +154,31 @@ def build_content(file_input):
         return [Image.open(buf), instruksi]
 
 # ============================================================
-# 6. FUNGSI VALIDASI KOMPREHENSIF DOKUMEN (FITUR BARU UTAMA)
+# 6. FUNGSI VALIDASI KOMPREHENSIF DOKUMEN
 # ============================================================
 def validate_document_fields(file_input, user_company, user_divisi, user_kategori, user_id_doc):
     """
-    Analisis dokumen dan validasi SEMUA field input user:
-    - Nama Perusahaan
-    - Divisi (EXPORT/IMPORT)
-    - Kategori Dokumen (MAWB/Invoice/Surat Jalan/dll)
-    - ID Document (No AWB/Invoice)
-    - Tanggal Dokumen
-    Return: dict dengan hasil validasi per field
+    Analisis dokumen dan validasi SEMUA field input user.
     """
     try:
         file_input.seek(0)
         
-        # Prompt komprehensif untuk ekstraksi semua field
         validation_prompt = f"""
 Kamu adalah validator dokumen logistik PT. Ekasari Perkasa.
-Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON:
+Analisis dokumen ini dan ekstrak informasi berikut dalam format JSON murni (tanpa markdown):
 
 {{
-  "company_name": "Nama perusahaan/klien yang tertera di dokumen",
-  "divisi": "EXPORT atau IMPORT (lihat indikator: PEB=EXPORT, PIB=IMPORT, MAWB tujuan/asal, invoice terms)",
+  "company_name": "Nama perusahaan/klien yang tertera",
+  "divisi": "EXPORT atau IMPORT (PEB=EXPORT, PIB=IMPORT)",
   "document_type": "Salah satu: MAWB, Invoice, Surat Jalan, DOKAP, Perizinan, PEB, PIB, SPPB, Lainnya",
-  "document_id": "Nomor dokumen utama (No AWB, No Invoice, No PEB/PIB, dll)",
-  "document_date": "Tanggal dokumen dalam format YYYY-MM-DD jika ada",
-  "confidence": "HIGH/MEDIUM/LOW (berdasarkan kejelasan informasi di dokumen)"
+  "document_id": "Nomor dokumen utama (No AWB, Invoice, dll)",
+  "confidence": "HIGH atau LOW"
 }}
 
 Instruksi:
-1. Jika informasi tidak ditemukan, isi dengan null atau "TIDAK DITEMUKAN"
-2. Untuk document_type, pilih yang PALING DOMINAN di dokumen
-3. Untuk document_id, ambil nomor referensi UTAMA (bukan nomor sekunder)
-4. Berikan confidence berdasarkan seberapa jelas informasi terbaca
-5. Output HANYA JSON valid, tanpa penjelasan tambahan
+1. Output HANYA JSON.
+2. Divisi: PEB/MAWB Export = EXPORT, PIB/MAWB Import = IMPORT.
+3. Jika tidak ada info, gunakan null.
 """
         
         if file_input.type == "application/pdf":
@@ -212,36 +190,35 @@ Instruksi:
             img = Image.open(file_input)
             konten = [img, validation_prompt]
         
-        # Call Gemini API
+        extracted = None
+        # ✅ FIX: Gunakan fallback model seperti fungsi utama
         for api_key in API_KEYS:
             genai.configure(api_key=api_key)
-            mdl = genai.GenerativeModel("gemini-3-flash")
-            response = mdl.generate_content(konten)
-            hasil = response.text.strip()
+            for model_name in MODEL_LIST:
+                try:
+                    mdl = genai.GenerativeModel(model_name)
+                    response = mdl.generate_content(konten)
+                    hasil = response.text.strip()
+                    
+                    # Bersihkan markdown jika ada
+                    if "```json" in hasil:
+                        hasil = hasil.split("```json")[1].split("```")[0].strip()
+                    elif "```" in hasil:
+                        hasil = hasil.split("```")[1].strip()
+                    
+                    extracted = json.loads(hasil)
+                    break
+                except Exception as e:
+                    err = str(e).lower()
+                    if "404" in err or "not found" in err:
+                        continue # Coba model berikutnya
+                    raise
+            if extracted: break
             
-            # Parse JSON response
-            import json
-            try:
-                # Bersihkan markdown code block jika ada
-                if "```json" in hasil:
-                    hasil = hasil.split("```json")[1].split("```")[0].strip()
-                elif "```" in hasil:
-                    hasil = hasil.split("```")[1].strip()
-                
-                extracted = json.loads(hasil)
-                break
-            except:
-                # Fallback: return error structure
-                extracted = {
-                    "company_name": "ERROR_PARSE",
-                    "divisi": "ERROR",
-                    "document_type": "ERROR", 
-                    "document_id": "ERROR",
-                    "document_date": None,
-                    "confidence": "LOW"
-                }
-        
-        # Bandingkan dengan input user
+        if not extracted:
+            raise ValueError("AI gagal mengembalikan JSON valid")
+            
+        # --- LOGIKA VALIDASI ---
         validation_result = {
             "extracted": extracted,
             "mismatches": [],
@@ -249,74 +226,54 @@ Instruksi:
             "warnings": []
         }
         
-        # 1. Validasi Nama Perusahaan
-        if extracted.get("company_name") and extracted["company_name"] not in ["null", "TIDAK DITEMUKAN", "ERROR_PARSE"]:
+        # 1. Validasi Nama Perusahaan (WARNING)
+        if extracted.get("company_name") and extracted["company_name"] not in [None, "null"]:
             doc_company = extracted["company_name"].upper()
             user_company_clean = user_company.upper().strip()
-            # Simple fuzzy match: cek apakah salah satu mengandung yang lain
             if user_company_clean and doc_company not in user_company_clean and user_company_clean not in doc_company:
-                validation_result["mismatches"].append({
-                    "field": "Nama Perusahaan",
-                    "user_input": user_company,
-                    "detected": extracted["company_name"],
-                    "severity": "WARNING"  # Bisa override, jadi warning saja
-                })
-                validation_result["warnings"].append(f"⚠️ Nama perusahaan di dokumen: \"{extracted['company_name']}\"")
+                validation_result["warnings"].append(f"⚠️ Nama di dokumen terdeteksi: \"{extracted['company_name']}\"")
         
-        # 2. Validasi Divisi (CRITICAL - harus match)
-        if extracted.get("divisi") and extracted["divisi"] in ["EXPORT", "IMPORT"]:
+        # 2. Validasi Divisi (ERROR CRITICAL)
+        if extracted.get("divisi") in ["EXPORT", "IMPORT"]:
             if extracted["divisi"] != user_divisi:
                 validation_result["mismatches"].append({
-                    "field": "Divisi",
-                    "user_input": user_divisi,
-                    "detected": extracted["divisi"],
-                    "severity": "ERROR"  # Critical mismatch
-                })
-                validation_result["can_proceed"] = False
-        
-        # 3. Validasi Kategori Dokumen (CRITICAL)
-        valid_categories = ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"]
-        if extracted.get("document_type") and extracted["document_type"] in valid_categories:
-            if extracted["document_type"] != user_kategori:
-                validation_result["mismatches"].append({
-                    "field": "Kategori Dokumen",
-                    "user_input": user_kategori,
-                    "detected": extracted["document_type"],
+                    "field": "Divisi", 
+                    "user_input": user_divisi, 
+                    "detected": extracted["divisi"], 
                     "severity": "ERROR"
                 })
                 validation_result["can_proceed"] = False
-        
-        # 4. Validasi ID Document (WARNING jika berbeda)
-        if extracted.get("document_id") and extracted["document_id"] not in ["null", "TIDAK DITEMUKAN", "ERROR"]:
-            doc_id_detected = extracted["document_id"].strip()
-            user_id_clean = user_id_doc.strip() if user_id_doc else ""
-            # Jika user input ID dan berbeda dengan yang terdeteksi
-            if user_id_clean and doc_id_detected.upper() != user_id_clean.upper():
+                
+        # 3. Validasi Kategori (ERROR CRITICAL)
+        valid_cats = ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"]
+        if extracted.get("document_type") in valid_cats:
+            if extracted["document_type"] != user_kategori:
                 validation_result["mismatches"].append({
-                    "field": "ID Document",
-                    "user_input": user_id_doc,
-                    "detected": doc_id_detected,
-                    "severity": "WARNING"  # Bisa jadi user salah ketik, jadi warning
+                    "field": "Kategori Dokumen", 
+                    "user_input": user_kategori, 
+                    "detected": extracted["document_type"], 
+                    "severity": "ERROR"
                 })
-                validation_result["warnings"].append(f"⚠️ ID dokumen terdeteksi: \"{doc_id_detected}\"")
-        
-        # 5. Validasi Confidence Level
-        if extracted.get("confidence") == "LOW":
-            validation_result["warnings"].append("⚠️ Analisis dokumen memiliki confidence LOW - periksa hasil dengan teliti")
-        
+                validation_result["can_proceed"] = False
+                
+        # 4. Validasi ID Document (WARNING)
+        if extracted.get("document_id") and extracted["document_id"] not in [None, "null"]:
+            user_id_clean = user_id_doc.strip() if user_id_doc else ""
+            if user_id_clean and extracted["document_id"].strip().upper() != user_id_clean.upper():
+                validation_result["warnings"].append(f"⚠️ ID dokumen terdeteksi: \"{extracted['document_id']}\"")
+                
         return validation_result
         
     except Exception as e:
-        # Return safe default jika error
         return {
             "extracted": {"error": str(e)},
             "mismatches": [],
-            "can_proceed": True,  # Jangan blokir jika validasi error, biar user tetap bisa upload manual
-            "warnings": [f"⚠️ Validasi otomatis gagal: {str(e)}. Lanjutkan dengan hati-hati."]
+            "can_proceed": True,
+            "warnings": [f"⚠️ Validasi otomatis gagal: {str(e)}. Lanjutkan manual."]
         }
 
 # ============================================================
-# 7. GOOGLE DRIVE UPLOAD (FIXED CREDENTIALS)
+# 7. GOOGLE DRIVE UPLOAD (FINAL FIX)
 # ============================================================
 def upload_to_drive(file_input, company_name, category, doc_id=None):
     if not DRIVE_LIB_AVAILABLE:
@@ -324,16 +281,17 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
     
     creds = st.session_state.get("drive_creds")
     if not creds:
-        return None, "❌ Kredensial Drive tidak tersedia. Pastikan service account sudah diinisialisasi."
+        return None, "❌ Kredensial Drive tidak tersedia. Pastikan service account benar."
     
     try:
+        # ✅ FIX: Ambil Folder ID dari secrets
         folder_id = st.secrets.get("DRIVE_FOLDER_ID")
         
         if not folder_id:
-            return None, "❌ DRIVE_FOLDER_ID tidak ditemukan di Secrets!"
+            return None, "❌ ERROR: DRIVE_FOLDER_ID kosong di Streamlit Secrets! Isi ID folder Anda."
         
         if folder_id == "root":
-            return None, "❌ Folder ID masih 'root'. Service account tidak bisa upload ke root."
+            return None, "❌ ERROR: DRIVE_FOLDER_ID tidak boleh 'root'. Service account tidak punya kuota root. Masukkan ID folder yang di-share ke Service Account."
         
         # Prepare file data
         file_input.seek(0)
@@ -350,7 +308,7 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
         ]
         
         drive_service = build("drive", "v3", credentials=creds)
-        parent_id = folder_id
+        parent_id = folder_id  # Mulai dari folder yang di-share
         
         for folder_name in folder_structure:
             query = (
@@ -391,8 +349,8 @@ def upload_to_drive(file_input, company_name, category, doc_id=None):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg or "do not have storage quota" in error_msg:
-            return None, "❌ Service account tidak punya kuota. Share folder ke email service account!"
-        return None, f"❌ Drive Upload Error: {error_msg}"
+            return None, "❌ Service account tidak punya kuota. Pastikan Anda men-share folder pribadi Anda ke email Service Account!"
+        return None, f" Drive Upload Error: {error_msg}"
 
 # ============================================================
 # 8. FUNGSI ANALISIS AI
@@ -422,14 +380,14 @@ def proses_analisis_ai(file_input):
                 return hasil
             except Exception as e:
                 err = str(e).lower()
-                if any(x in err for x in ["404", "not found", "model"]):
+                if "404" in err or "not found" in err:
                     continue
-                if any(x in err for x in ["429", "quota", "exhausted"]):
+                if "quota" in err or "exhausted" in err:
                     st.toast("⚠️ Limit terdeteksi, mencoba model berikutnya...", icon="🔄")
                     continue
                 return f"❌ Error API: {e}"
 
-    return "❌ Gagal. Pastikan Billing aktif dan model didukung."
+    return "❌ Gagal. Pastikan Billing aktif."
 
 # ============================================================
 # 9. SIDEBAR & MENU
@@ -442,22 +400,19 @@ with st.sidebar:
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v9.0 - Full Auto-Validation System")
+    st.caption("Build v9.1 - Full Auto-Validation & Stable Models")
     
-    # Debug info
     st.markdown("---")
     st.markdown("### 🔧 System Status")
     if drive_creds:
         st.success("✅ Drive credentials tersedia")
-        creds_info = dict(st.secrets["gcp_service_account"])
-        st.info(f"📧 Service Account:\n`{creds_info.get('client_email')}`")
     else:
-        st.error("❌ Drive credentials tidak tersedia")
+        st.error(" Drive credentials gagal")
     
     if "DRIVE_FOLDER_ID" in st.secrets:
-        st.success(f"✅ DRIVE_FOLDER_ID: `{st.secrets['DRIVE_FOLDER_ID'][:20]}...`")
+        st.success(f"✅ Folder ID: `{st.secrets['DRIVE_FOLDER_ID'][:15]}...`")
     else:
-        st.error("❌ DRIVE_FOLDER_ID tidak ada di Secrets")
+        st.error("❌ Folder ID hilang di Secrets")
 
 # ============================================================
 # 10. MAIN APP LOGIC
@@ -495,7 +450,7 @@ elif menu == "📤 Scan & Upload":
         id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
     st.markdown("---")
-    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
+    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", " Gunakan Kamera"], horizontal=True)
     
     u_file = None
     
@@ -505,127 +460,84 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah Anda menekan tombol di bawah")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    upload_to_drive_option = st.checkbox("🗂️ Simpan file fisik ke Google Drive", value=True)
+    upload_to_drive_option = st.checkbox("️ Simpan file fisik ke Google Drive", value=True)
 
-    if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
+    if u_file and st.button(" PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach :-D ")
+            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
         else:
-            # 🔍 VALIDASI KOMPREHENSIF SEMUA FIELD
-            with st.spinner("🔍 Memvalidasi dokumen secara otomatis..."):
+            # 1. VALIDASI OTOMATIS
+            with st.spinner(" Memvalidasi kesesuaian data dokumen..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
             
-            # Tampilkan hasil validasi
+            # 2. CEK HASIL VALIDASI
             if validation["mismatches"]:
                 st.markdown('<div class="error-box">', unsafe_allow_html=True)
-                st.markdown("### 🚨 PERINGATAN: Ketidaksesuaian Data Terdeteksi")
+                st.markdown("### 🚨 PERINGATAN: Ketidaksesuaian Data")
                 
-                # Tabel validasi
                 mismatch_df = pd.DataFrame(validation["mismatches"])
-                mismatch_df["Status"] = mismatch_df["severity"].apply(lambda x: "❌ ERROR" if x == "ERROR" else "⚠️ WARNING")
+                mismatch_df["Status"] = mismatch_df["severity"].apply(lambda x: "❌ ERROR" if x == "ERROR" else "️ WARNING")
                 st.table(mismatch_df[["field", "user_input", "detected", "Status"]].rename(columns={
-                    "field": "Field", "user_input": "Input Anda", "detected": "Terdeteksi di Dokumen", "Status": "Status"
+                    "field": "Field", "user_input": "Input Anda", "detected": "Terdeteksi AI", "Status": "Status"
                 }))
                 
-                # Warning tambahan
                 if validation["warnings"]:
                     st.markdown("**Catatan Tambahan:**")
-                    for warn in validation["warnings"]:
-                        st.markdown(f"- {warn}")
+                    for w in validation["warnings"]: st.markdown(f"- {w}")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
                 
-                # Jika ada ERROR severity, blokir upload
                 if not validation["can_proceed"]:
-                    st.markdown("""
-                        <div class="error-box">
-                        <h3>⛔ UPLOAD DIBLOKIR</h3>
-                        <p>Silakan perbaiki ketidaksesuaian berstatus <strong>❌ ERROR</strong> terlebih dahulu:</p>
-                        <ul>
-                            <li>Periksa kembali pilihan <strong>Divisi</strong> dan <strong>Kategori Dokumen</strong></li>
-                            <li>Pastikan file yang diupload sesuai dengan form yang diisi</li>
-                            <li>Jika dokumen memang benar, hubungi admin untuk penyesuaian sistem</li>
-                        </ul>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.error(" UPLOAD DIBLOKIR: Perbaiki Divisi atau Kategori Dokumen yang salah!")
                     st.stop()
                 else:
-                    # Hanya warning, tanyakan konfirmasi
-                    st.warning("⚠️ Terdapat perbedaan WARNING. Apakah Anda yakin ingin melanjutkan?")
-                    confirm = st.checkbox("✅ Saya sudah periksa dan ingin melanjutkan upload")
-                    if not confirm:
+                    st.warning("️ Terdapat perbedaan minor. Pastikan data sudah benar sebelum lanjut.")
+                    if not st.checkbox("✅ Saya yakin data sudah benar, lanjutkan upload"):
                         st.stop()
-            
-            # Jika ada warning saja (tanpa error), tampilkan info
+
             elif validation["warnings"]:
                 st.markdown('<div class="warning-box">', unsafe_allow_html=True)
-                st.markdown("### ⚠️ Perhatian")
-                for warn in validation["warnings"]:
-                    st.markdown(f"- {warn}")
+                for w in validation["warnings"]: st.markdown(f"- {w}")
                 st.markdown("</div>", unsafe_allow_html=True)
             
-            # Jika validasi lolos atau user konfirmasi, lanjutkan ke AI analysis
-            with st.spinner("🤖 System Sedang Menganalisis Data..."):
+            # 3. PROSES AI & SIMPAN
+            with st.spinner("🤖 AI Menganalisis detail dokumen..."):
                 hasil = proses_analisis_ai(u_file)
                 
                 if "❌" not in hasil and sheet:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
                     
-                    # Upload ke Drive jika dicentang
                     drive_link = None
                     if upload_to_drive_option:
-                        with st.spinner("📤 Mengupload file fisik ke Google Drive..."):
+                        with st.spinner("📤 Mengupload ke Google Drive..."):
                             drive_link, drive_error = upload_to_drive(u_file, nama_klien, kategori, doc_name)
                             if drive_error:
                                 st.warning(drive_error)
                             elif drive_link:
                                 st.success(f"🔗 File tersimpan di Drive: [Link]({drive_link})")
                     
-                    # Simpan ke Google Sheets
                     sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n📎 Drive: {drive_link}" if drive_link else hasil])
                     
-                    # Tampilkan success
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
                     st.success("✅ Berhasil disimpan ke Database!")
-                    if validation["extracted"].get("confidence") == "HIGH":
-                        st.markdown("🎯 Analisis dokumen: Confidence HIGH - Data terdeteksi dengan jelas")
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Expander untuk hasil detail
-                    with st.expander("📋 Hasil Analisis AI Lengkap"):
+                    with st.expander("📋 Hasil Analisis AI"):
                         st.info(hasil)
-                        if validation["extracted"]:
-                            st.markdown("**🔍 Data yang Terdeteksi Otomatis:**")
+                        if validation["extracted"] and "error" not in validation["extracted"]:
                             st.json(validation["extracted"])
                 else:
                     st.error(hasil)
 
 elif menu == "📑 Full Database":
-    st.header("📊 Full Inventory Log")
+    st.header(" Full Inventory Log")
     if sheet:
         try:
             data = pd.DataFrame(sheet.get_all_records())
             if not data.empty:
-                # Filter & Search
-                col_search, col_filter = st.columns([3, 1])
-                with col_search:
-                    search_term = st.text_input("🔍 Cari...", placeholder="Nama / ID / Kategori / Divisi")
-                with col_filter:
-                    filter_divisi = st.selectbox("Filter Divisi", ["Semua", "EXPORT", "IMPORT"])
-                
-                # Apply filters
-                if search_term:
-                    data = data[data.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)]
-                if filter_divisi != "Semua":
-                    data = data[data["Divisi"] == filter_divisi]
-                
                 st.dataframe(data, use_container_width=True)
-                
-                # Download
                 csv = data.to_csv(index=False, encoding="utf-8-sig")
-                st.download_button("📥 Download CSV", data=csv, file_name=f"inventory_esp_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
-            else:
-                st.info("📭 Belum ada data dalam database")
-        except Exception as e: 
-            st.error(f"Error: {e}")
+                st.download_button("📥 Download CSV", data=csv, file_name="inventory_esp.csv", mime="text/csv")
+            else: st.info("📭 Database kosong")
+        except Exception as e: st.error(f"Error: {e}")

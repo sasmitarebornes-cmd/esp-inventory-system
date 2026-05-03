@@ -132,12 +132,7 @@ def proses_analisis_ai(file_input):
 
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        MODEL_LIST = [
-    "gemini-3-flash",                # Model utama tahun 2026
-    "gemini-3-flash-preview",        # Versi preview terbaru
-    "gemini-3.1-flash-lite-preview", # Versi hemat kuota
-    "gemini-2.5-pro"                 # Fallback seri 2.5
-]
+        model = genai.GenerativeModel("gemini-3-flash")
         
         is_pdf = hasattr(file_input, 'type') and file_input.type == "application/pdf"
         file_input.seek(0)
@@ -185,9 +180,9 @@ if menu == "📤 Scan & Upload":
 
     if input_final and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaan dulu ya Sayank :D")
+            st.warning("⚠️ Isi Nama Perusahaan!")
         else:
-            with st.spinner("System sedang Menganalisis Data..."):
+            with st.spinner("Menganalisis & Mengunggah File ke Folder May..."):
                 # 1. Jalankan Analisis AI
                 hasil_ai = proses_analisis_ai(input_final)
                 

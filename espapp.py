@@ -8,20 +8,19 @@ from PIL import Image
 import os
 import time
 import pandas as pd
-import hashlib
 import io
 
 # ============================================================
 # 1. SETUP HALAMAN
 # ============================================================
 st.set_page_config(
-    page_title="PT. ESP - SMART INVENTORY 2026",
+    page_title="PT. EKASARI PERKASA - SMART INVENTORY 2026",
     layout="wide",
     page_icon="ESP LOGO ICON RED WHITE.png"
 )
 
 # ============================================================
-# 2. CSS CUSTOM (PREMIUM PT. ESP STYLE)
+# 2. CSS CUSTOM (PREMIUM STYLE)
 # ============================================================
 st.markdown("""
     <style>
@@ -57,7 +56,7 @@ def load_api_keys():
     return [st.secrets["GOOGLE_API_KEY"]] if "GOOGLE_API_KEY" in st.secrets else []
 
 API_KEYS = load_api_keys()
-MODEL_LIST = ["gemini-3-flash", "gemini-3-flash-preview", "gemini-2.0-flash-exp"]
+MODEL_LIST = ["gemini-1.5-flash", "gemini-1.5-pro"] # Gunakan model stabil
 
 @st.cache_resource
 def init_services():
@@ -79,7 +78,7 @@ def init_services():
 sheet, drive_service = init_services()
 
 # ============================================================
-# 4. DRIVE AUTO-FOLDER LOGIC
+# 4. DRIVE AUTO-FOLDER & FIX QUOTA LOGIC
 # ============================================================
 def get_or_create_folder(folder_name, parent_id=None):
     query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
@@ -101,8 +100,8 @@ def get_or_create_folder(folder_name, parent_id=None):
         return folder.get('id')
 
 def upload_to_drive(file_content, file_name, mime_type, client_name):
-    # ID Folder "EKASARI DATA INVENTORY" dari screenshot drive sas.png
-    ROOT_ID = "13wUu0PasVjyvVL9d4UEQkC_5EFddF2h3" # <--- GANTI DENGAN ID FOLDER ANDA (ada di URL browser saat buka folder tsb)
+    # ROOT_ID Folder "EKASARI DATA INVENTORY"
+    ROOT_ID = "13wUu0PasVjyvVL9d4UEQkC_5EFddF2h3" 
     
     year_folder = time.strftime("%Y")
     month_folder = time.strftime("%B")
@@ -114,7 +113,30 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     file_metadata = {'name': full_name, 'parents': [id_bulan]}
     media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
     
-    uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+    # Proses Upload
+    uploaded_file = drive_service.files().create(
+        body=file_metadata, 
+        media_body=media, 
+        fields='id, webViewLink'
+    ).execute()
+    
+    file_id = uploaded_file.get('id')
+
+    # FIX ERROR 403: Transfer kepemilikan ke email lo agar pakai kuota penyimpanan Gmail lo
+    try:
+        user_permission = {
+            'type': 'user',
+            'role': 'owner',
+            'emailAddress': 'sasmitareborns@gmail.com' 
+        }
+        drive_service.permissions().create(
+            fileId=file_id,
+            body=user_permission,
+            transferOwnership=True
+        ).execute()
+    except:
+        pass # Jika gagal transfer, file tetap terupload tapi kuota service account mungkin penuh
+
     return uploaded_file.get('webViewLink')
 
 # ============================================================
@@ -130,7 +152,7 @@ def build_content(file_input, instruksi):
         return [img, instruksi]
 
 def proses_analisis_ai(file_input, client_name):
-    instruksi = f"Kamu adalah AI Inventory PT ESP. Analisis dokumen klien {client_name}. Ekstrak detail barang, berat, dan no dokumen secara profesional seperti format Air Waybill."
+    instruksi = f"Kamu adalah AI Inventory PT EKASARI PERKASA. Analisis dokumen klien {client_name}. Ekstrak detail barang, berat, dan no dokumen secara profesional seperti format Air Waybill."
     
     for api_key in API_KEYS:
         genai.configure(api_key=api_key)
@@ -142,7 +164,7 @@ def proses_analisis_ai(file_input, client_name):
                 return response.text
             except:
                 continue
-    return "❌ Gagal. Model Gemini 3 tidak merespon."
+    return "❌ Gagal. Model AI tidak merespon."
 
 # ============================================================
 # 6. SIDEBAR NAVIGATION
@@ -171,7 +193,7 @@ if menu == "🏠 Dashboard":
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
             st.image("ESP LOGO ICON RED WHITE.png", width=100)
     with c_txt:
-        st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1><p style='margin:0;'>Inventory Dashboard</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1><p style='margin:0;'>Smart Inventory Dashboard</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     if sheet:
@@ -183,11 +205,13 @@ if menu == "🏠 Dashboard":
                 s2.metric("Klien Terakhir", str(df.iloc[-1, 0]))
                 st.subheader("📊 Transaksi Terbaru")
                 st.dataframe(df.tail(10), use_container_width=True)
+            else:
+                st.info("Database masih kosong. Silakan upload dokumen pertama kamu!")
         except:
-            st.info("👋 Selamat datang di Sistem Inventory PT. ESP!")
+            st.info("👋 Selamat datang di Sistem Inventory PT. EKASARI PERKASA!")
 
 # ============================================================
-# 8. SCAN & UPLOAD (FINAL INTEGRATION)
+# 8. SCAN & UPLOAD
 # ============================================================
 elif menu == "📤 Scan & Upload":
     st.header("📤 Input Dokumen Inventory")
@@ -215,11 +239,9 @@ elif menu == "📤 Scan & Upload":
             st.warning("⚠️ Isi Nama Perusahaan dulu bray!")
         else:
             with st.spinner("🤖 AI sedang menganalisa & menyimpan ke Drive..."):
-                # 1. Jalankan Analisis AI
                 hasil_ai = proses_analisis_ai(source, nama_klien)
                 
                 if "❌" not in hasil_ai:
-                    # 2. Proses Upload ke Drive (Auto-Folder)
                     source.seek(0)
                     file_bytes = source.read()
                     orig_name = getattr(source, 'name', 'camera_shot.jpg')
@@ -227,17 +249,11 @@ elif menu == "📤 Scan & Upload":
                     
                     try:
                         link_drive = upload_to_drive(file_bytes, orig_name, m_type, nama_klien)
-                        
-                        # 3. Simpan ke Sheets (Kolom F=Hasil AI, Kolom G=Link Drive)
                         ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                        
                         sheet.append_row([
-                            nama_klien, 
-                            ts, 
-                            id_doc if id_doc else "Auto", 
-                            kategori, 
-                            divisi, 
-                            hasil_ai, 
-                            link_drive
+                            nama_klien, ts, id_doc if id_doc else "Auto", 
+                            kategori, divisi, hasil_ai, link_drive
                         ])
                         
                         st.success("✅ Berhasil! Data & Link File Tersimpan.")
@@ -254,7 +270,24 @@ elif menu == "📤 Scan & Upload":
 elif menu == "📑 Full Database":
     st.header("📊 Full Inventory Log")
     if sheet:
-        data = pd.DataFrame(sheet.get_all_records())
-        st.dataframe(data, use_container_width=True)
-        csv = data.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download CSV", csv, "Database_ESP.csv", "text/csv")
+        try:
+            data = pd.DataFrame(sheet.get_all_records())
+            if not data.empty:
+                # Kolom pencarian sederhana
+                search = st.text_input("🔍 Cari Klien atau No Dokumen")
+                if search:
+                    data = data[data.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+                
+                st.dataframe(data, use_container_width=True)
+                
+                csv = data.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Database (CSV)",
+                    data=csv,
+                    file_name=f"Database_ESP_{time.strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.warning("Database kosong.")
+        except Exception as e:
+            st.error(f"Gagal memuat database: {e}")

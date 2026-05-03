@@ -30,7 +30,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. CSS OVERRIDE
+# 2. CSS OVERRIDE (Updated dengan Signature Style)
 # ============================================================
 st.markdown("""
     <style>
@@ -60,6 +60,27 @@ st.markdown("""
     .error-box { background-color: #f8d7da; border-left: 5px solid #dc3545; padding: 15px; border-radius: 5px; margin: 10px 0; }
     .success-box { background-color: #d4edda; border-left: 5px solid #28a745; padding: 15px; border-radius: 5px; margin: 10px 0; }
     .title-logo { display: flex; align-items: center; gap: 15px; }
+    
+    /* Signature Style */
+    .signature-box {
+        text-align: center;
+        margin-top: 50px;
+        padding: 20px;
+        border-top: 2px solid #e0e0e0;
+    }
+    .signature-text {
+        font-family: 'Brush Script MT', 'Lucida Handwriting', 'Segoe Script', cursive;
+        font-size: 28px;
+        color: #0e2135;
+        font-weight: bold;
+        letter-spacing: 2px;
+    }
+    .signature-year {
+        font-family: 'Arial', sans-serif;
+        font-size: 14px;
+        color: #666;
+        margin-top: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -89,7 +110,7 @@ if not API_KEYS:
     st.stop()
 
 # ============================================================
-# 4. KONEKSI GOOGLE SHEETS (FIXED - HANDLE ERROR 200)
+# 4. KONEKSI GOOGLE SHEETS
 # ============================================================
 @st.cache_resource
 def init_gsheet():
@@ -105,16 +126,11 @@ def init_gsheet():
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         gc = gspread.authorize(creds)
         
-        # Buka spreadsheet
         spreadsheet = gc.open("DATA INVENTORY PT.ESP")
-        
-        # Ambil sheet pertama
         worksheet = spreadsheet.sheet1
         
-        # Test akses dengan get_all_values()
         all_values = worksheet.get_all_values()
         
-        # Jika sheet kosong, buat header
         if not all_values or len(all_values) == 0:
             header = ["Nama Perusahaan", "Timestamp", "ID Dokumen", "Kategori", "Divisi", "Hasil Analisis"]
             worksheet.append_row(header)
@@ -124,7 +140,7 @@ def init_gsheet():
         
     except gspread.exceptions.APIError as e:
         st.sidebar.error(f" Sheets API Error: {str(e)}")
-        st.sidebar.info("💡 Pastikan spreadsheet 'DATA INVENTORY PT.ESP' sudah di-share ke service account")
+        st.sidebar.info("💡 Pastikan spreadsheet 'DATA INVENTORY PT.ESP' sudah di-share")
         return None
     except Exception as e:
         st.sidebar.error(f" Sheets Error: {type(e).__name__}: {str(e)}")
@@ -175,7 +191,7 @@ def init_firebase():
 firebase_bucket = init_firebase()
 
 # ============================================================
-# 6-11. HELPER FUNCTIONS (Sama seperti sebelumnya)
+# 6-11. HELPER FUNCTIONS (Tidak Berubah)
 # ============================================================
 
 def get_file_hash(file_input):
@@ -359,7 +375,7 @@ with st.sidebar:
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key: **{len(API_KEYS)}**")
-    st.caption("Build v10.4 - Fixed Error 200")
+    st.caption("Build v10.5 - Auto Upload + Signature")
     
     st.markdown("---")
     st.markdown("### Status")
@@ -371,6 +387,15 @@ with st.sidebar:
         st.success("✅ Firebase: Connected")
     else:
         st.error("❌ Firebase: Disconnected")
+    
+    # ✅ SIGNATURE DI SIDEBAR
+    st.markdown("---")
+    st.markdown("""
+    <div class="signature-box">
+        <div class="signature-text">Sebastian Sasmita.JR</div>
+        <div class="signature-year">© 2026 - PT. Ekasari Perkasa</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ============================================================
 # MAIN APP LOGIC
@@ -429,11 +454,11 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah tombol ditekan")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    upload_to_cloud_option = st.checkbox("☁️ Simpan file fisik ke Firebase", value=True)
+    # ✅ CHECKBOX DIHAPUS - Auto upload ke Firebase
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank")
+            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank muach :-D")
         elif sheet is None:
             st.error("❌ Google Sheets tidak terkoneksi! Cek sidebar.")
         else:
@@ -458,20 +483,30 @@ elif menu == "📤 Scan & Upload":
                 if "❌" not in hasil and sheet is not None:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
+                    
+                    # ✅ AUTO UPLOAD KE FIREBASE (Tanpa Checkbox)
                     cloud_link = None
-                    if upload_to_cloud_option:
-                        with st.spinner(" Uploading..."):
-                            cloud_link, cloud_error = upload_to_firebase(u_file, nama_klien, kategori, doc_name)
-                            if cloud_error:
-                                st.warning(cloud_error)
-                            elif cloud_link:
-                                st.success(f"🔗 File: [Link]({cloud_link})")
+                    with st.spinner(" ☁️ Upload ke Firebase..."):
+                        cloud_link, cloud_error = upload_to_firebase(u_file, nama_klien, kategori, doc_name)
+                        if cloud_error:
+                            st.warning(cloud_error)
+                        elif cloud_link:
+                            st.success(f"🔗 File tersimpan: [Link]({cloud_link})")
+                    
                     sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n☁️ Cloud: {cloud_link}" if cloud_link else hasil])
                     st.success("✅ Berhasil disimpan!")
                     with st.expander("📋 Hasil Analisis"):
                         st.info(hasil)
                 else:
                     st.error(hasil)
+    
+    # ✅ SIGNATURE DI HALAMAN UPLOAD
+    st.markdown("""
+    <div class="signature-box">
+        <div class="signature-text">Sebastian Sasmita.JR</div>
+        <div class="signature-year">Created with ❤️ for PT. Ekasari Perkasa | © 2026</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 elif menu == "📑 Full Database":
     st.header("📊 Full Inventory Log")
@@ -486,3 +521,11 @@ elif menu == "📑 Full Database":
             st.error(f"Error: {e}")
     else:
         st.error("❌ Sheets tidak terkoneksi")
+    
+    # ✅ SIGNATURE DI HALAMAN DATABASE
+    st.markdown("""
+    <div class="signature-box">
+        <div class="signature-text">Sebastian Sasmita.JR</div>
+        <div class="signature-year">System Developer | © 2026</div>
+    </div>
+    """, unsafe_allow_html=True)

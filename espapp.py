@@ -2,6 +2,8 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import google.generativeai as genai
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from PIL import Image
 import os
 import time
@@ -38,14 +40,6 @@ st.markdown("""
         margin-bottom: 25px;
         border-bottom: 5px solid #d32f2f;
     }
-    .status-badge {
-        background-color: #00e676;
-        color: #000;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.7rem;
-        font-weight: bold;
-    }
     div[data-testid="metric-container"] {
         background-color: white !important;
         padding: 20px !important;
@@ -57,62 +51,86 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 3. LOAD API KEY & MODEL LIST (GEMINI 3)
+# 3. KONEKSI SERVICES (GSHEET, DRIVE, AI)
 # ============================================================
 def load_api_keys():
     return [st.secrets["GOOGLE_API_KEY"]] if "GOOGLE_API_KEY" in st.secrets else []
 
 API_KEYS = load_api_keys()
+MODEL_LIST = ["gemini-3-flash", "gemini-3-flash-preview", "gemini-2.0-flash-exp"]
 
-# Menggunakan model Gemini terbaru tahun 2026
-MODEL_LIST = [
-    "gemini-3-flash", 
-    "gemini-3-flash-preview", 
-    "gemini-2.0-flash-exp" # Fallback
-]
-
-if not API_KEYS:
-    st.error("❌ API KEY TIDAK DITEMUKAN!")
-    st.stop()
-
-# ============================================================
-# 4. KONEKSI GOOGLE SHEETS
-# ============================================================
 @st.cache_resource
-def init_gsheet():
+def init_services():
     try:
         creds_info = dict(st.secrets["gcp_service_account"])
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        
         gc = gspread.authorize(creds)
-        return gc.open("DATA INVENTORY PT.ESP").get_worksheet(0)
+        drive_service = build('drive', 'v3', credentials=creds)
+        sheet = gc.open("DATA INVENTORY PT.ESP").get_worksheet(0)
+        return sheet, drive_service
     except Exception as e:
-        st.sidebar.error(f"Gagal koneksi Sheets: {e}")
-        return None
+        st.sidebar.error(f"Gagal koneksi Services: {e}")
+        return None, None
 
-sheet = init_gsheet()
+sheet, drive_service = init_services()
+
+# ============================================================
+# 4. DRIVE AUTO-FOLDER LOGIC
+# ============================================================
+def get_or_create_folder(folder_name, parent_id=None):
+    query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
+    
+    results = drive_service.files().list(q=query, fields="files(id)").execute()
+    files = results.get('files', [])
+    
+    if files:
+        return files[0]['id']
+    else:
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_id] if parent_id else []
+        }
+        folder = drive_service.files().create(body=file_metadata, fields='id').execute()
+        return folder.get('id')
+
+def upload_to_drive(file_content, file_name, mime_type, client_name):
+    # ID Folder "EKASARI DATA INVENTORY" dari screenshot drive sas.png
+    ROOT_ID = "143j0uV_4rR8S9E-Qp9E9E9E9E9E9E9E9" # <--- GANTI DENGAN ID FOLDER ANDA (ada di URL browser saat buka folder tsb)
+    
+    year_folder = time.strftime("%Y")
+    month_folder = time.strftime("%B")
+    
+    id_tahun = get_or_create_folder(year_folder, ROOT_ID)
+    id_bulan = get_or_create_folder(month_folder, id_tahun)
+    
+    full_name = f"{client_name}_{time.strftime('%H%M%S')}_{file_name}"
+    file_metadata = {'name': full_name, 'parents': [id_bulan]}
+    media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
+    
+    uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+    return uploaded_file.get('webViewLink')
 
 # ============================================================
 # 5. HELPER & AI CORE
 # ============================================================
-def get_file_hash(file_input):
-    file_input.seek(0)
-    return hashlib.md5(file_input.read()).hexdigest()
-
 def build_content(file_input, instruksi):
+    file_input.seek(0)
     if hasattr(file_input, 'type') and file_input.type == "application/pdf":
-        file_input.seek(0)
         return [{"mime_type": "application/pdf", "data": file_input.read()}, instruksi]
     else:
-        # Untuk Gambar/Kamera
         img = Image.open(file_input)
         if img.mode != 'RGB': img = img.convert('RGB')
         return [img, instruksi]
 
 def proses_analisis_ai(file_input, client_name):
-    instruksi = f"Kamu adalah AI Inventory PT ESP. Analisis dokumen klien {client_name}. Ekstrak detail barang, berat, dan no dokumen secara profesional."
+    instruksi = f"Kamu adalah AI Inventory PT ESP. Analisis dokumen klien {client_name}. Ekstrak detail barang, berat, dan no dokumen secara profesional seperti format Air Waybill."
     
     for api_key in API_KEYS:
         genai.configure(api_key=api_key)
@@ -122,15 +140,14 @@ def proses_analisis_ai(file_input, client_name):
                 content = build_content(file_input, instruksi)
                 response = model.generate_content(content)
                 return response.text
-            except Exception:
+            except:
                 continue
-    return "❌ Gagal. Model Gemini 3 tidak merespon atau kuota habis."
+    return "❌ Gagal. Model Gemini 3 tidak merespon."
 
 # ============================================================
 # 6. SIDEBAR NAVIGATION
 # ============================================================
 with st.sidebar:
-    # Membuat logo presisi di tengah menggunakan kolom
     side_col1, side_col2, side_col3 = st.columns([1, 3, 1])
     with side_col2:
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
@@ -149,32 +166,28 @@ with st.sidebar:
 # ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
-    # vertical_alignment="center" memastikan logo sejajar tengah dengan teks
     c_logo, c_txt = st.columns([1, 5], vertical_alignment="center") 
     with c_logo:
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
             st.image("ESP LOGO ICON RED WHITE.png", width=100)
     with c_txt:
-        st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='margin:0;'>Inventory Dashboard</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='margin:0;'>PT. EKASARI PERKASA</h1><p style='margin:0;'>Inventory Dashboard</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
+    
     if sheet:
         try:
             df = pd.DataFrame(sheet.get_all_records())
-            df.columns = df.columns.str.strip()
             if not df.empty:
                 s1, s2, s3 = st.columns(3)
                 s1.metric("Total Dokumen", f"{len(df)}")
                 s2.metric("Klien Terakhir", str(df.iloc[-1, 0]))
-                if "Tanggal" in df.columns:
-                    s3.metric("Update", str(df.iloc[-1]['Tanggal']).split()[0])
                 st.subheader("📊 Transaksi Terbaru")
                 st.dataframe(df.tail(10), use_container_width=True)
         except:
             st.info("👋 Selamat datang di Sistem Inventory PT. ESP!")
 
 # ============================================================
-# 8. SCAN & UPLOAD (DENGAN KAMERA)
+# 8. SCAN & UPLOAD (FINAL INTEGRATION)
 # ============================================================
 elif menu == "📤 Scan & Upload":
     st.header("📤 Input Dokumen Inventory")
@@ -199,17 +212,41 @@ elif menu == "📤 Scan & Upload":
 
     if source and st.button("🚀 PROSES & SIMPAN", type="primary", use_container_width=True):
         if not nama_klien:
-            st.warning("⚠️ Isi Nama Perusahaan dulu ya sayank!")
+            st.warning("⚠️ Isi Nama Perusahaan dulu bray!")
         else:
-            with st.spinner("🤖 AI Gemini 3 sedang bekerja..."):
-                hasil = proses_analisis_ai(source, nama_klien)
-                if "❌" not in hasil:
-                    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                    sheet.append_row([nama_klien, ts, id_doc if id_doc else "Auto", kategori, divisi, hasil])
-                    st.success("✅ Data Berhasil Masuk ke Database PT. ESP!")
-                    st.info(hasil)
+            with st.spinner("🤖 AI sedang menganalisa & menyimpan ke Drive..."):
+                # 1. Jalankan Analisis AI
+                hasil_ai = proses_analisis_ai(source, nama_klien)
+                
+                if "❌" not in hasil_ai:
+                    # 2. Proses Upload ke Drive (Auto-Folder)
+                    source.seek(0)
+                    file_bytes = source.read()
+                    orig_name = getattr(source, 'name', 'camera_shot.jpg')
+                    m_type = getattr(source, 'type', 'image/jpeg')
+                    
+                    try:
+                        link_drive = upload_to_drive(file_bytes, orig_name, m_type, nama_klien)
+                        
+                        # 3. Simpan ke Sheets (Kolom F=Hasil AI, Kolom G=Link Drive)
+                        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                        sheet.append_row([
+                            nama_klien, 
+                            ts, 
+                            id_doc if id_doc else "Auto", 
+                            kategori, 
+                            divisi, 
+                            hasil_ai, 
+                            link_drive
+                        ])
+                        
+                        st.success("✅ Berhasil! Data & Link File Tersimpan.")
+                        st.info(f"📄 Hasil Analisis:\n{hasil_ai}")
+                        st.link_button("📂 Buka File di Google Drive", link_drive)
+                    except Exception as e:
+                        st.error(f"Gagal upload ke Drive: {e}")
                 else:
-                    st.error(hasil)
+                    st.error(hasil_ai)
 
 # ============================================================
 # 9. DATABASE

@@ -324,9 +324,9 @@ elif menu == "📤 Scan & Upload":
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
+            st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach :-D ")
         else:
-            with st.spinner("AI Menganalisis dengan Gemini 3..."):
+            with st.spinner("System Sedang Menganalisis..."):
                 hasil = proses_analisis_ai(u_file)
                 if "❌" not in hasil and sheet:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")

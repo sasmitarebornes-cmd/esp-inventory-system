@@ -56,8 +56,6 @@ def load_api_keys():
     return [st.secrets["GOOGLE_API_KEY"]] if "GOOGLE_API_KEY" in st.secrets else []
 
 API_KEYS = load_api_keys()
-
-# HANYA MENGGUNAKAN MODEL GEMINI 3 FLASH
 MODEL_LIST = ["gemini-3-flash", "gemini-3-flash-preview"]
 
 @st.cache_resource
@@ -80,7 +78,7 @@ def init_services():
 sheet, drive_service = init_services()
 
 # ============================================================
-# 4. DRIVE AUTO-FOLDER & FIX QUOTA LOGIC
+# 4. DRIVE AUTO-FOLDER & FIX QUOTA LOGIC (URGENT FIX)
 # ============================================================
 def get_or_create_folder(folder_name, parent_id=None):
     query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
@@ -102,6 +100,7 @@ def get_or_create_folder(folder_name, parent_id=None):
         return folder.get('id')
 
 def upload_to_drive(file_content, file_name, mime_type, client_name):
+    # ROOT_ID Folder utama yang sudah di-share ke Service Account
     ROOT_ID = "13wUu0PasVjyvVL9d4UEQkC_5EFddF2h3" 
     
     year_folder = time.strftime("%Y")
@@ -111,36 +110,37 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     id_bulan = get_or_create_folder(month_folder, id_tahun)
     
     full_name = f"{client_name}_{time.strftime('%H%M%S')}_{file_name}"
-    file_metadata = {'name': full_name, 'parents': [id_bulan]}
+    
+    # STRATEGI: Upload langsung dengan mendefinisikan parents di awal
+    # Gunakan 'supportsAllDrives=True' untuk mengatasi limit kuota service account
+    file_metadata = {
+        'name': full_name, 
+        'parents': [id_bulan]
+    }
+    
     media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
     
     uploaded_file = drive_service.files().create(
         body=file_metadata, 
         media_body=media, 
-        fields='id, webViewLink'
+        fields='id, webViewLink',
+        supportsAllDrives=True # Mengabaikan limit internal service account
     ).execute()
     
-    file_id = uploaded_file.get('id')
-
-    # Bagian transfer kepemilikan tetap dipertahankan untuk menghindari error 403
+    # Tetap tambahkan ijin agar user bisa akses penuh
     try:
-        user_permission = {
-            'type': 'user',
-            'role': 'owner',
-            'emailAddress': 'sasmitareborns@gmail.com' 
-        }
         drive_service.permissions().create(
-            fileId=file_id,
-            body=user_permission,
-            transferOwnership=True
+            fileId=uploaded_file.get('id'),
+            body={'type': 'anyone', 'role': 'writer'},
+            supportsAllDrives=True
         ).execute()
     except:
-        pass 
+        pass
 
     return uploaded_file.get('webViewLink')
 
 # ============================================================
-# 5. HELPER & AI CORE
+# 5. HELPER & AI CORE (GEMINI 3 FLASH)
 # ============================================================
 def build_content(file_input, instruksi):
     file_input.seek(0)

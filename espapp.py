@@ -56,7 +56,13 @@ def load_api_keys():
     return [st.secrets["GOOGLE_API_KEY"]] if "GOOGLE_API_KEY" in st.secrets else []
 
 API_KEYS = load_api_keys()
-MODEL_LIST = ["gemini-1.5-flash", "gemini-1.5-pro"] # Gunakan model stabil
+
+# POWERED BY GEMINI 3 (2026 EDITION)
+MODEL_LIST = [
+    "gemini-3-flash", 
+    "gemini-3-flash-preview", 
+    "gemini-2.0-flash-exp" # Fallback terakhir
+]
 
 @st.cache_resource
 def init_services():
@@ -100,7 +106,6 @@ def get_or_create_folder(folder_name, parent_id=None):
         return folder.get('id')
 
 def upload_to_drive(file_content, file_name, mime_type, client_name):
-    # ROOT_ID Folder "EKASARI DATA INVENTORY"
     ROOT_ID = "13wUu0PasVjyvVL9d4UEQkC_5EFddF2h3" 
     
     year_folder = time.strftime("%Y")
@@ -113,7 +118,7 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     file_metadata = {'name': full_name, 'parents': [id_bulan]}
     media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
     
-    # Proses Upload
+    # 1. Upload ke Drive
     uploaded_file = drive_service.files().create(
         body=file_metadata, 
         media_body=media, 
@@ -122,7 +127,7 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     
     file_id = uploaded_file.get('id')
 
-    # FIX ERROR 403: Transfer kepemilikan ke email lo agar pakai kuota penyimpanan Gmail lo
+    # 2. FIX QUOTA: Transfer ownership ke Gmail utama agar storage robot gak penuh
     try:
         user_permission = {
             'type': 'user',
@@ -135,7 +140,7 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
             transferOwnership=True
         ).execute()
     except:
-        pass # Jika gagal transfer, file tetap terupload tapi kuota service account mungkin penuh
+        pass 
 
     return uploaded_file.get('webViewLink')
 
@@ -164,7 +169,7 @@ def proses_analisis_ai(file_input, client_name):
                 return response.text
             except:
                 continue
-    return "❌ Gagal. Model AI tidak merespon."
+    return "❌ Gagal. Model Gemini 3 tidak merespon."
 
 # ============================================================
 # 6. SIDEBAR NAVIGATION
@@ -205,10 +210,8 @@ if menu == "🏠 Dashboard":
                 s2.metric("Klien Terakhir", str(df.iloc[-1, 0]))
                 st.subheader("📊 Transaksi Terbaru")
                 st.dataframe(df.tail(10), use_container_width=True)
-            else:
-                st.info("Database masih kosong. Silakan upload dokumen pertama kamu!")
         except:
-            st.info("👋 Selamat datang di Sistem Inventory PT. EKASARI PERKASA!")
+            st.info("👋 Selamat datang di PT. EKASARI PERKASA!")
 
 # ============================================================
 # 8. SCAN & UPLOAD
@@ -236,9 +239,9 @@ elif menu == "📤 Scan & Upload":
 
     if source and st.button("🚀 PROSES & SIMPAN", type="primary", use_container_width=True):
         if not nama_klien:
-            st.warning("⚠️ Isi Nama Perusahaan dulu bray!")
+            st.warning("⚠️ Isi Nama Perusahaan dulu!")
         else:
-            with st.spinner("🤖 AI sedang menganalisa & menyimpan ke Drive..."):
+            with st.spinner("🤖 Gemini 3 sedang menganalisa..."):
                 hasil_ai = proses_analisis_ai(source, nama_klien)
                 
                 if "❌" not in hasil_ai:
@@ -256,11 +259,11 @@ elif menu == "📤 Scan & Upload":
                             kategori, divisi, hasil_ai, link_drive
                         ])
                         
-                        st.success("✅ Berhasil! Data & Link File Tersimpan.")
+                        st.success("✅ Berhasil! Data Gemini 3 & Link Drive Tersimpan.")
                         st.info(f"📄 Hasil Analisis:\n{hasil_ai}")
-                        st.link_button("📂 Buka File di Google Drive", link_drive)
+                        st.link_button("📂 Buka File Original di Drive", link_drive)
                     except Exception as e:
-                        st.error(f"Gagal upload ke Drive: {e}")
+                        st.error(f"Gagal upload: {e}")
                 else:
                     st.error(hasil_ai)
 
@@ -270,24 +273,7 @@ elif menu == "📤 Scan & Upload":
 elif menu == "📑 Full Database":
     st.header("📊 Full Inventory Log")
     if sheet:
-        try:
-            data = pd.DataFrame(sheet.get_all_records())
-            if not data.empty:
-                # Kolom pencarian sederhana
-                search = st.text_input("🔍 Cari Klien atau No Dokumen")
-                if search:
-                    data = data[data.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
-                
-                st.dataframe(data, use_container_width=True)
-                
-                csv = data.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Database (CSV)",
-                    data=csv,
-                    file_name=f"Database_ESP_{time.strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                )
-            else:
-                st.warning("Database kosong.")
-        except Exception as e:
-            st.error(f"Gagal memuat database: {e}")
+        data = pd.DataFrame(sheet.get_all_records())
+        st.dataframe(data, use_container_width=True)
+        csv = data.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "Database_ESP.csv", "text/csv")

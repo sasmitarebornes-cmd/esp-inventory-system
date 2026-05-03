@@ -501,7 +501,7 @@ elif menu == "📤 Scan & Upload":
                 st.markdown("</div>", unsafe_allow_html=True)
             
             # 3. PROSES AI & SIMPAN
-            with st.spinner("🤖 AI Menganalisis detail dokumen..."):
+            with st.spinner("System Sedang Menganalisis Data..."):
                 hasil = proses_analisis_ai(u_file)
                 
                 if "❌" not in hasil and sheet:

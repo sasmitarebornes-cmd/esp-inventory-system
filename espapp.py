@@ -57,12 +57,8 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
-# POWERED BY GEMINI 3 (2026 EDITION)
-MODEL_LIST = [
-    "gemini-3-flash", 
-    "gemini-3-flash-preview", 
-    "gemini-2.0-flash-exp" # Fallback terakhir
-]
+# HANYA MENGGUNAKAN MODEL GEMINI 3 FLASH
+MODEL_LIST = ["gemini-3-flash", "gemini-3-flash-preview"]
 
 @st.cache_resource
 def init_services():
@@ -118,7 +114,6 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     file_metadata = {'name': full_name, 'parents': [id_bulan]}
     media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
     
-    # 1. Upload ke Drive
     uploaded_file = drive_service.files().create(
         body=file_metadata, 
         media_body=media, 
@@ -127,7 +122,7 @@ def upload_to_drive(file_content, file_name, mime_type, client_name):
     
     file_id = uploaded_file.get('id')
 
-    # 2. FIX QUOTA: Transfer ownership ke Gmail utama agar storage robot gak penuh
+    # Bagian transfer kepemilikan tetap dipertahankan untuk menghindari error 403
     try:
         user_permission = {
             'type': 'user',

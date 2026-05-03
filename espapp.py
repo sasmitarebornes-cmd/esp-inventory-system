@@ -98,7 +98,8 @@ sheet = init_gsheet()
 # ============================================================
 def get_file_hash(file_input):
     file_input.seek(0)
-    h = hashlib.md5(file_input.read()).hexdigest()
+    data = file_input.read()
+    h = hashlib.md5(data).hexdigest()
     file_input.seek(0)
     return h
 
@@ -114,13 +115,16 @@ def compress_image(file_input, max_size=(1024, 1024), quality=80):
 
 def build_content(file_input):
     instruksi = (
-        "Kamu adalah AI Inventory PT ESP. "
+        "Kamu adalah AI Inventory PT EKASARI PERKASA. "
         "Ekstrak informasi penting dari dokumen ini: "
         "Semua detail dokumen, "
         "Sajikan secara ringkas dan terstruktur."
         "Lakukan deep analyze."
     )
-    if file_input.type == "application/pdf":
+    # Cek tipe file (UploadFile vs BytesIO dari kamera)
+    is_pdf = hasattr(file_input, 'type') and file_input.type == "application/pdf"
+    
+    if is_pdf:
         file_input.seek(0)
         pdf_data = file_input.read()
         return [{"mime_type": "application/pdf", "data": pdf_data}, instruksi]
@@ -165,18 +169,25 @@ def proses_analisis_ai(file_input):
     return "❌ Gagal. Pastikan Billing aktif dan model didukung di tahun 2026."
 
 # ============================================================
-# 7. SIDEBAR & MENU (Bagian selanjutnya tetap sama)
+# 7. SIDEBAR & MENU (LOGO PRESISI DI TENGAH)
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
-        st.image("ESP LOGO ICON RED WHITE.png", width=160)
-    st.title("PT. EKASARI PERKASA DATABASE")
+        # Membuat kolom untuk menengahkan gambar secara presisi
+        col_side1, col_side2, col_side3 = st.columns([1, 2, 1])
+        with col_side2:
+            st.image("ESP LOGO ICON RED WHITE.png", use_container_width=True)
+    
+    st.markdown("<h3 style='text-align: center; color: white;'>PT. EKASARI PERKASA</h3>", unsafe_allow_html=True)
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key aktif: **{len(API_KEYS)}**")
-    st.caption("Build v8.0 - 2026 Gemini 3 Engine")
+    st.caption("Build v8.1 - 2026 Gemini 3 Engine")
 
+# ============================================================
+# 8. DASHBOARD
+# ============================================================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="header-box">', unsafe_allow_html=True)
     col_logo, col_text = st.columns([1, 5])
@@ -199,6 +210,9 @@ if menu == "🏠 Dashboard":
                 st.dataframe(df.tail(10), use_container_width=True)
         except: st.info("Dashboard siap!")
 
+# ============================================================
+# 9. SCAN & UPLOAD (DENGAN FITUR KAMERA)
+# ============================================================
 elif menu == "📤 Scan & Upload":
     st.header("Ekasari Perkasa Inventory Dashboard")
     c_a, c_b = st.columns(2)
@@ -209,22 +223,40 @@ elif menu == "📤 Scan & Upload":
         kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan" , "PEB" , "PIB" , "Lainnya"])
         id_doc = st.text_input("ID Document (No AWB/Invoice)")
 
-    u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"])
+    # Pilihan Input: File Uploader atau Kamera
+    tab_upload, tab_camera = st.tabs(["📁 Upload File", "📷 Ambil Foto"])
+    
+    source_file = None
+    
+    with tab_upload:
+        u_file = st.file_uploader("Pilih Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"], key="uploader")
+        if u_file:
+            source_file = u_file
 
-    if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
+    with tab_camera:
+        cam_file = st.camera_input("Scan Dokumen via Kamera", key="camera")
+        if cam_file:
+            source_file = cam_file
+
+    if source_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
             st.warning("⚠️ Isi dulu Nama Perusahaannya Ya Sayank muach ")
         else:
-            with st.spinner("AI Menganalisis dengan Gemini 3..."):
-                hasil = proses_analisis_ai(u_file)
+            with st.spinner("System Sedang Menganalisis DATA..."):
+                hasil = proses_analisis_ai(source_file)
                 if "❌" not in hasil and sheet:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                    sheet.append_row([nama_klien, ts, id_doc if id_doc else u_file.name, kategori, divisi, hasil])
+                    # Dapatkan nama file untuk referensi
+                    fname = getattr(source_file, 'name', 'camera_capture.jpg')
+                    sheet.append_row([nama_klien, ts, id_doc if id_doc else fname, kategori, divisi, hasil])
                     st.success("✅ Berhasil disimpan!")
                     st.info(hasil)
                 else:
                     st.error(hasil)
 
+# ============================================================
+# 10. FULL DATABASE
+# ============================================================
 elif menu == "📑 Full Database":
     st.header("📊 Full Inventory Log")
     if sheet:

@@ -30,56 +30,275 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. CSS OVERRIDE (Updated dengan Signature Style)
+# 2. CSS OVERRIDE - PREMIUM DESIGN
 # ============================================================
 st.markdown("""
     <style>
-    .stApp { background-color: #f0f2f6 !important; }
-    [data-testid="stSidebar"] { background-color: #0e2135 !important; }
+    /* Import Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap');
+    
+    /* Root Variables */
+    :root {
+        --primary-navy: #1e3a5f;
+        --secondary-navy: #2d4a6f;
+        --accent-gold: #f59e0b;
+        --accent-gold-hover: #d97706;
+        --bg-gradient-start: #f8fafc;
+        --bg-gradient-end: #e0e7ff;
+        --card-bg: rgba(255, 255, 255, 0.95);
+        --text-primary: #1e293b;
+        --text-secondary: #64748b;
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Animated Background Gradient */
+    .stApp {
+        background: linear-gradient(-45deg, #f8fafc, #e0e7ff, #f0f9ff, #f8fafc);
+        background-size: 400% 400%;
+        animation: gradientShift 15s ease infinite;
+        font-family: 'Inter', sans-serif !important;
+    }
+    
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    
+    /* Sidebar Premium Styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%) !important;
+        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+    }
+    
     [data-testid="stSidebar"] .stText,
     [data-testid="stSidebar"] label,
     [data-testid="stSidebar"] .stMarkdown p,
-    [data-testid="stSidebar"] h1 { color: #ffffff !important; }
-    div[data-testid="stSidebar"] div[role="radiogroup"] > label { color: white !important; }
-    .header-box {
-        background-color: white;
-        padding: 20px 40px;
-        border-radius: 15px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
-        margin-bottom: 25px;
-        border-bottom: 5px solid #d32f2f;
+    [data-testid="stSidebar"] h1 {
+        color: #f1f5f9 !important;
     }
-    div[data-testid="metric-container"] {
-        background-color: white !important;
-        padding: 20px !important;
-        border-radius: 10px !important;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.05) !important;
-        border-left: 5px solid #0e2135 !important;
-    }
-    .warning-box { background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; border-radius: 5px; margin: 10px 0; }
-    .error-box { background-color: #f8d7da; border-left: 5px solid #dc3545; padding: 15px; border-radius: 5px; margin: 10px 0; }
-    .success-box { background-color: #d4edda; border-left: 5px solid #28a745; padding: 15px; border-radius: 5px; margin: 10px 0; }
-    .title-logo { display: flex; align-items: center; gap: 15px; }
     
-    /* Signature Style */
+    /* Glassmorphism Cards */
+    .header-box {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 40px 60px;
+        border-radius: 20px;
+        box-shadow: var(--shadow-xl);
+        margin-bottom: 40px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-left: 6px solid var(--accent-gold);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .header-box::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, transparent 100%);
+        pointer-events: none;
+    }
+    
+    /* Metric Cards Premium */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%) !important;
+        padding: 30px !important;
+        border-radius: 16px !important;
+        box-shadow: var(--shadow-lg) !important;
+        border: 1px solid rgba(226, 232, 240, 0.8) !important;
+        border-left: 5px solid var(--accent-gold) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-xl) !important;
+    }
+    
+    /* Title Styling */
+    .header-box h1 {
+        font-family: 'Playfair Display', serif !important;
+        color: var(--primary-navy) !important;
+        font-weight: 700;
+        font-size: 2.5em;
+        margin: 0;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.05);
+    }
+    
+    .header-box p {
+        color: var(--text-secondary) !important;
+        font-size: 1.1em;
+        margin: 10px 0 0 0;
+        font-weight: 400;
+    }
+    
+    /* Warning/Error/Success Boxes Premium */
+    .warning-box {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%);
+        border-left: 5px solid #f59e0b;
+        padding: 20px;
+        border-radius: 12px;
+        margin: 15px 0;
+        box-shadow: var(--shadow-md);
+    }
+    
+    .error-box {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+        border-left: 5px solid #ef4444;
+        padding: 20px;
+        border-radius: 12px;
+        margin: 15px 0;
+        box-shadow: var(--shadow-md);
+    }
+    
+    .success-box {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%);
+        border-left: 5px solid #22c55e;
+        padding: 20px;
+        border-radius: 12px;
+        margin: 15px 0;
+        box-shadow: var(--shadow-md);
+    }
+    
+    /* Title Logo Container */
+    .title-logo {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 30px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 16px;
+        box-shadow: var(--shadow-md);
+    }
+    
+    /* Signature Premium */
     .signature-box {
         text-align: center;
-        margin-top: 50px;
-        padding: 20px;
-        border-top: 2px solid #e0e0e0;
+        margin-top: 60px;
+        padding: 30px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+        border-radius: 16px;
+        box-shadow: var(--shadow-md);
+        border: 1px solid rgba(226, 232, 240, 0.8);
     }
+    
     .signature-text {
-        font-family: 'Brush Script MT', 'Lucida Handwriting', 'Segoe Script', cursive;
-        font-size: 28px;
-        color: #0e2135;
-        font-weight: bold;
-        letter-spacing: 2px;
+        font-family: 'Playfair Display', 'Brush Script MT', cursive;
+        font-size: 32px;
+        background: linear-gradient(135deg, var(--primary-navy) 0%, var(--accent-gold) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 700;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
     }
+    
     .signature-year {
-        font-family: 'Arial', sans-serif;
-        font-size: 14px;
-        color: #666;
-        margin-top: 5px;
+        font-family: 'Inter', sans-serif;
+        font-size: 13px;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+    
+    /* Button Styling */
+    .stButton>button {
+        background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-hover) 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        padding: 12px 24px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        box-shadow: var(--shadow-md) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg) !important;
+    }
+    
+    /* Input Fields */
+    .stTextInput>div>div>input,
+    .stSelectbox>div>div>select {
+        border-radius: 10px !important;
+        border: 2px solid #e2e8f0 !important;
+        padding: 10px 15px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stTextInput>div>div>input:focus,
+    .stSelectbox>div>div>select:focus {
+        border-color: var(--accent-gold) !important;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1) !important;
+    }
+    
+    /* Radio Buttons */
+    div[data-testid="stRadio"] > label {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 15px 20px;
+        border-radius: 12px;
+        box-shadow: var(--shadow-sm);
+        margin: 5px 0;
+    }
+    
+    /* Checkbox */
+    .stCheckbox>div>div>label {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 12px 18px;
+        border-radius: 10px;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    /* Table Styling */
+    div[data-testid="stTable"] {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: var(--shadow-md);
+    }
+    
+    /* Expander Premium */
+    .streamlit-expanderHeader {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 10px;
+        padding: 15px;
+    }
+    
+    /* Scrollbar Custom */
+    ::-webkit-scrollbar {
+        width: 10px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, var(--accent-gold) 0%, var(--accent-gold-hover) 100%);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-gold-hover);
+    }
+    
+    /* Divider */
+    hr {
+        border: none;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--accent-gold), transparent);
+        margin: 30px 0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -370,15 +589,16 @@ def proses_analisis_ai(file_input):
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
         st.image("ESP LOGO ICON RED WHITE.png", width=160)
-    st.title("PT. EKASARI PERKASA DATABASE")
+    st.title("PT. EKASARI PERKASA")
+    st.markdown("<div style='color: #f59e0b; font-size: 12px; margin-top: -10px;'>SMART INVENTORY SYSTEM</div>", unsafe_allow_html=True)
     st.markdown("---")
     menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
     st.markdown("---")
     st.caption(f"🔑 API Key: **{len(API_KEYS)}**")
-    st.caption("Build v10.5 - Auto Upload + Signature")
+    st.caption("Build v11.0 - Premium Design")
     
     st.markdown("---")
-    st.markdown("### Status")
+    st.markdown("### 📊 System Status")
     if sheet is not None:
         st.success("✅ Sheets: Connected")
     else:
@@ -388,11 +608,11 @@ with st.sidebar:
     else:
         st.error("❌ Firebase: Disconnected")
     
-    # ✅ SIGNATURE DI SIDEBAR
+    # SIGNATURE DI SIDEBAR
     st.markdown("---")
     st.markdown("""
-    <div class="signature-box">
-        <div class="signature-text">Sebastian Sasmita.JR</div>
+    <div class="signature-box" style="margin-top: 40px; padding: 25px;">
+        <div class="signature-text" style="font-size: 26px;">Sebastian Sasmita.JR</div>
         <div class="signature-year">© 2026 - PT. Ekasari Perkasa</div>
     </div>
     """, unsafe_allow_html=True)
@@ -407,8 +627,8 @@ if menu == "🏠 Dashboard":
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
             st.image("ESP LOGO ICON RED WHITE.png", width=110)
     with col_text:
-        st.markdown("<h1 style='margin:0; color:#0e2135;'>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='margin:0; color:#666;'>Sistem Inventory Data Otomatis</p>", unsafe_allow_html=True)
+        st.markdown("<h1>PT. EKASARI PERKASA</h1>", unsafe_allow_html=True)
+        st.markdown("<p>Sistem Inventory Data Otomatis</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     if sheet is not None:
@@ -416,9 +636,9 @@ if menu == "🏠 Dashboard":
             df = pd.DataFrame(sheet.get_all_records())
             if not df.empty:
                 s1, s2, s3 = st.columns(3)
-                with s1: st.metric("Total Dokumen", f"{len(df)} Unit")
-                with s2: st.metric("Klien Terakhir", str(df.iloc[-1, 0]) if len(df) > 0 else "-")
-                with s3: st.metric("Update", str(df.iloc[-1, 1]).split(" ")[0] if len(df) > 0 else "-")
+                with s1: st.metric("📄 Total Dokumen", f"{len(df)} Unit")
+                with s2: st.metric("🏢 Klien Terakhir", str(df.iloc[-1, 0]) if len(df) > 0 else "-")
+                with s3: st.metric("🕐 Update", str(df.iloc[-1, 1]).split(" ")[0] if len(df) > 0 else "-")
                 st.dataframe(df.tail(10), use_container_width=True)
             else:
                 st.info("📭 Database kosong")
@@ -434,19 +654,20 @@ elif menu == "📤 Scan & Upload":
         if os.path.exists("ESP LOGO ICON RED WHITE.png"):
             st.image("ESP LOGO ICON RED WHITE.png", width=60)
     with col_title:
-        st.header("Ekasari Perkasa Inventory Dashboard")
+        st.markdown("<h2 style='margin:0; color: #1e3a5f;'>Ekasari Perkasa Inventory Dashboard</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>Upload & Analisis Dokumen Otomatis</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     c_a, c_b = st.columns(2)
     with c_a:
-        nama_klien = st.text_input("Nama Perusahaan")
-        divisi = st.selectbox("Divisi", ["EXPORT", "IMPORT", "DOMESTIK"])
+        nama_klien = st.text_input("🏢 Nama Perusahaan")
+        divisi = st.selectbox("📋 Divisi", ["EXPORT", "IMPORT", "DOMESTIK"])
     with c_b:
-        kategori = st.selectbox("Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"])
-        id_doc = st.text_input("ID Document (No AWB/Invoice)")
+        kategori = st.selectbox("📁 Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"])
+        id_doc = st.text_input("🔢 ID Document (No AWB/Invoice)")
 
     st.markdown("---")
-    upload_method = st.radio(" Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
+    upload_method = st.radio("📥 Metode Input", ["📁 Upload File", "📷 Gunakan Kamera"], horizontal=True)
     u_file = None
     if upload_method == "📁 Upload File":
         u_file = st.file_uploader("Upload Dokumen (PDF/JPG/PNG)", type=["pdf", "jpg", "jpeg", "png"], key="file_uploader")
@@ -454,20 +675,18 @@ elif menu == "📤 Scan & Upload":
         st.info("📸 Kamera hanya aktif setelah tombol ditekan")
         u_file = st.camera_input("📷 Ambil Foto Dokumen", key="camera_input")
 
-    # ✅ CHECKBOX DIHAPUS - Auto upload ke Firebase
-
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank muach :-D")
+            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank Muachh :-D")
         elif sheet is None:
             st.error("❌ Google Sheets tidak terkoneksi! Cek sidebar.")
         else:
-            with st.spinner(" Memvalidasi..."):
+            with st.spinner("🔍 Memvalidasi dokumen..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
             
             if validation["mismatches"]:
                 st.markdown('<div class="error-box">', unsafe_allow_html=True)
-                st.markdown("### 🚨 PERINGATAN")
+                st.markdown("### 🚨 PERINGATAN: Ketidaksesuaian Data")
                 mismatch_df = pd.DataFrame(validation["mismatches"])
                 st.table(mismatch_df[["field", "user_input", "detected"]])
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -475,32 +694,34 @@ elif menu == "📤 Scan & Upload":
                     st.error(" UPLOAD DIBLOKIR!")
                     st.stop()
                 else:
-                    if not st.checkbox("✅ Lanjutkan"):
+                    if not st.checkbox("✅ Ya, saya yakin dan ingin melanjutkan"):
                         st.stop()
             
-            with st.spinner(" Menganalisis..."):
+            with st.spinner("System Sedang Menganalisis Data..."):
                 hasil = proses_analisis_ai(u_file)
                 if "❌" not in hasil and sheet is not None:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     doc_name = id_doc if id_doc else u_file.name
                     
-                    # ✅ AUTO UPLOAD KE FIREBASE (Tanpa Checkbox)
+                    # AUTO UPLOAD KE FIREBASE
                     cloud_link = None
-                    with st.spinner(" ☁️ Upload ke Firebase..."):
+                    with st.spinner("☁️ Mengupload ke Firebase Storage..."):
                         cloud_link, cloud_error = upload_to_firebase(u_file, nama_klien, kategori, doc_name)
                         if cloud_error:
                             st.warning(cloud_error)
                         elif cloud_link:
-                            st.success(f"🔗 File tersimpan: [Link]({cloud_link})")
+                            st.success(f"🔗 File tersimpan: [Lihat File]({cloud_link})")
                     
                     sheet.append_row([nama_klien, ts, doc_name, kategori, divisi, f"{hasil}\n\n☁️ Cloud: {cloud_link}" if cloud_link else hasil])
-                    st.success("✅ Berhasil disimpan!")
-                    with st.expander("📋 Hasil Analisis"):
+                    st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                    st.success("✅ Berhasil disimpan ke database!")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    with st.expander("📋 Hasil Analisis "):
                         st.info(hasil)
                 else:
                     st.error(hasil)
     
-    # ✅ SIGNATURE DI HALAMAN UPLOAD
+    # SIGNATURE
     st.markdown("""
     <div class="signature-box">
         <div class="signature-text">Sebastian Sasmita.JR</div>
@@ -522,7 +743,7 @@ elif menu == "📑 Full Database":
     else:
         st.error("❌ Sheets tidak terkoneksi")
     
-    # ✅ SIGNATURE DI HALAMAN DATABASE
+    # SIGNATURE
     st.markdown("""
     <div class="signature-box">
         <div class="signature-text">Sebastian Sasmita.JR</div>

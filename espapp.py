@@ -30,7 +30,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. CSS OVERRIDE - PREMIUM + TRACKING STYLES
+# 2. CSS OVERRIDE - PREMIUM + BRIGHT SIDEBAR TEXT
 # ============================================================
 st.markdown("""
     <style>
@@ -194,6 +194,12 @@ st.markdown("""
         padding: 5px 10px;
         border-radius: 6px;
         display: inline-block;
+    }
+    
+    /* FIX: SIDEBAR MENU TEXT BRIGHTER */
+    div[data-testid="stRadio"] label > div > div > p {
+        color: #ffffff !important;
+        font-weight: 500 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -450,7 +456,7 @@ def proses_analisis_ai(file_input):
     return "❌ Gagal."
 
 # ============================================================
-# 10. SIDEBAR (CLEAN & ELEGANT)
+# 10. SIDEBAR (CLEAN & BRIGHT TEXT)
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
@@ -461,9 +467,9 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # MENU UTAMA ELEGAN
+    # MENU UTAMA ELEGAN - FIX: Removed AI Agent, Added Bright Text CSS
     st.markdown("<h3 style='color: #f59e0b; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 15px; font-size: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;'>MENU UTAMA</h3>", unsafe_allow_html=True)
-    menu = st.radio("", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database", "🤖 AI Agent", "📡 Tracking & Search"], label_visibility="collapsed")
+    menu = st.radio("", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database", "📡 Tracking & Search"], label_visibility="collapsed")
     
     st.markdown("---")
     
@@ -538,6 +544,7 @@ elif menu == "📤 Scan & Upload":
         nama_klien = st.text_input("🏢 Nama Perusahaan")
         divisi = st.selectbox("📋 Divisi", ["EXPORT", "IMPORT", "DOMESTIK"])
     with c_b:
+        # ✅ Your custom categories preserved
         kategori = st.selectbox("📁 Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "ECOO" , "COO" , "INSW DOC" , "SEWA GUDANG" , "Lainnya"])
         id_doc = st.text_input("🔢 ID Document (No AWB/Invoice)")
 
@@ -617,101 +624,7 @@ elif menu == "📑 Full Database":
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 12. FITUR BARU: AI AGENT ADMINISTRATIVE
-# ============================================================
-elif menu == "🤖 Smart Administrative Agent":
-    st.markdown('<div class="title-logo">', unsafe_allow_html=True)
-    col_logo2, col_title = st.columns([1, 8])
-    with col_logo2:
-        if os.path.exists("ESP LOGO ICON RED WHITE.png"): st.image("ESP LOGO ICON RED WHITE.png", width=60)
-    with col_title:
-        st.markdown("<h2 style='margin:0; color: #1e3a5f;'>Logistics Intelligence Agent</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>Auto-Analysis & PIB Tax Reporting Generation</p>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown(TAGLINE_HTML, unsafe_allow_html=True)
-    
-    if sheet is None:
-        st.error("❌ Database tidak terkoneksi. AI Agent tidak dapat berjalan.")
-    else:
-        try:
-            data = pd.DataFrame(sheet.get_all_records())
-            if data.empty:
-                st.warning("📭 Database kosong. Upload dokumen terlebih dahulu.")
-            else:
-                st.markdown("""
-                <div class="agent-card">
-                    <h3 class="agent-title">📊 Executive Summary</h3>
-                    <p style="color: #64748b;">Analisis data inventory saat ini untuk keperluan laporan pajak dan logistik.</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                if st.button(" Generate Intelligence Report", type="primary", use_container_width=True):
-                    with st.spinner(" AI sedang menganalisis data logistik..."):
-                        # Convert dataframe to CSV string for AI context
-                        csv_context = data.to_csv(index=False)
-                        
-                        # Create specialized prompt
-                        prompt = f"""
-                        Kamu adalah Chief Administrative Officer di PT. Ekasari Perkasa.
-                        Tugasmu adalah membuat "Laporan PIB & Logistics Intelligence" dari data CSV berikut.
-                        Format laporan harus formal, profesional, dan siap untuk pelaporan pajak/internal.
-
-                        DATA CSV:
-                        {csv_context}
-
-                        BUAT LAPORAN DENGAN FORMAT BERIKUT:
-                        1. 📈 REKAPITULASI TOTAL:
-                           - Total Jumlah Dokumen PIB/MAWB
-                           - Total Estimasi Nilai Barang (jika ada angka, jumlahkan)
-                           - Total Berat Barang (jika ada angka, jumlahkan)
-                        
-                        2. 🌍 ANALISIS NEGARA ASAL:
-                           - Kelompokkan jumlah pengiriman berdasarkan Negara Asal.
-                           - Sebutkan Top 3 negara yang paling banyak melakukan pengiriman.
-                        
-                        3. 📦 KATEGORI BARANG:
-                           - Rincian jenis barang yang diimpor (Contoh: Live Tropical Fish, dll).
-                        
-                        4. ⚠️ REKOMENDASI PAJAK & LOGISTIK:
-                           - Berikan saran singkat untuk efisiensi bea cukai berdasarkan data.
-                        
-                        Gunakan Bahasa Indonesia yang baku.
-                        """
-                        
-                        try:
-                            genai.configure(api_key=API_KEYS[0])
-                            model = genai.GenerativeModel("gemini-1.5-flash")
-                            response = model.generate_content(prompt)
-                            report_text = response.text
-                            
-                            st.markdown('<div class="agent-card">', unsafe_allow_html=True)
-                            st.markdown("### 📝 Laporan Intelligence Report")
-                            st.markdown(report_text)
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            # Download Button
-                            st.download_button(
-                                label="📥 Download Laporan (TXT)",
-                                data=report_text,
-                                file_name="Laporan_PIB_Intelligence.txt",
-                                mime="text/plain"
-                            )
-                        except Exception as e:
-                            st.error(f"❌ Gagal generate report: {e}")
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-            
-    st.markdown("""
-    <div class="signature-box">
-        <div class="signature-text">Sebastian Sasmita.JR</div>
-        <div class="signature-year">Logistics Intelligence Powered by AI | © 2026</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ============================================================
-# 13. FITUR BARU: LIVE TRACKING MAWB & GLOBAL SEARCH (HS CODE)
+# 12. FITUR BARU: LIVE TRACKING MAWB & GLOBAL SEARCH (HS CODE)
 # ============================================================
 elif menu == "📡 Tracking & Search":
     st.markdown('<div class="title-logo">', unsafe_allow_html=True)
@@ -727,10 +640,10 @@ elif menu == "📡 Tracking & Search":
     
     tab1, tab2 = st.tabs(["📦 Live Tracking MAWB", "🌍 Global Search HS Code"])
     
-    # TAB 1: LIVE TRACKING MAWB
+    # TAB 1: LIVE TRACKING MAWB - FIX: Added unsafe_allow_html=True
     with tab1:
         st.markdown('<div class="agent-card">', unsafe_allow_html=True)
-        st.markdown("<h3 class='agent-title'>✈️ Live MAWB Tracking</h3>")
+        st.markdown("<h3 class='agent-title'>✈️ Live MAWB Tracking</h3>", unsafe_allow_html=True)
         st.info("Masukkan Master Air Waybill (MAWB) Number untuk melacak status pengiriman secara real-time.")
         
         mawb_input = st.text_input("MAWB Number (Contoh: 203-12345678)", placeholder="XXX-XXXXXXXX")
@@ -738,7 +651,6 @@ elif menu == "📡 Tracking & Search":
         if st.button("🔍 Track Shipment", type="primary", use_container_width=True):
             if mawb_input:
                 with st.spinner("📡 Menghubungkan ke Global Logistics Network..."):
-                    # Simulasi Tracking menggunakan AI
                     prompt_tracking = f"""
                     Simulasikan laporan tracking untuk nomor MAWB: {mawb_input}.
                     Buat format yang realistis seperti dashboard logistik:
@@ -765,10 +677,10 @@ elif menu == "📡 Tracking & Search":
                 st.warning("⚠️ Masukkan nomor MAWB terlebih dahulu.")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # TAB 2: GLOBAL SEARCH HS CODE
+    # TAB 2: GLOBAL SEARCH HS CODE - FIX: Added unsafe_allow_html=True
     with tab2:
         st.markdown('<div class="agent-card">', unsafe_allow_html=True)
-        st.markdown("<h3 class='agent-title'>🔍 Global HS Code Search</h3>")
+        st.markdown("<h3 class='agent-title'>🔍 Global HS Code Search</h3>", unsafe_allow_html=True)
         st.info("Cari Kode HS (Harmonized System) untuk impor barang ke Indonesia.")
         
         hs_query = st.text_input("Nama Barang / Deskripsi", placeholder="Contoh: Live Tropical Fish, Electronic Components")

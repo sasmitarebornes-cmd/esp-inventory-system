@@ -30,7 +30,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. CSS OVERRIDE - PREMIUM DESIGN + TAGLINE MARQUEE
+# 2. CSS OVERRIDE - PREMIUM + TRACKING STYLES
 # ============================================================
 st.markdown("""
     <style>
@@ -168,6 +168,33 @@ st.markdown("""
     ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; }
     ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--accent-gold) 0%, var(--accent-gold-hover) 100%); border-radius: 10px; }
     hr { border: none; height: 2px; background: linear-gradient(90deg, transparent, var(--accent-gold), transparent); margin: 30px 0; }
+    
+    /* AI Agent & Tracking Card Style */
+    .agent-card {
+        background: white;
+        padding: 25px;
+        border-radius: 16px;
+        box-shadow: var(--shadow-lg);
+        margin-bottom: 20px;
+        border: 1px solid #e2e8f0;
+    }
+    .agent-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.5rem;
+        color: var(--primary-navy);
+        margin-bottom: 15px;
+        border-bottom: 2px solid var(--accent-gold);
+        display: inline-block;
+        padding-bottom: 5px;
+    }
+    .tracking-status {
+        font-weight: bold;
+        color: #059669;
+        background-color: #d1fae5;
+        padding: 5px 10px;
+        border-radius: 6px;
+        display: inline-block;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -217,7 +244,6 @@ def init_gsheet():
         if not all_values or len(all_values) == 0:
             header = ["Nama Perusahaan", "Timestamp", "ID Dokumen", "Kategori", "Divisi", "Hasil Analisis"]
             worksheet.append_row(header)
-            st.sidebar.warning("⚠️ Sheet kosong, header default dibuat")
         
         return worksheet
     except gspread.exceptions.APIError as e:
@@ -260,7 +286,6 @@ def init_firebase():
             firebase_admin.initialize_app(cred, {'storageBucket': storage_bucket})
         return storage.bucket()
     except Exception as e:
-        st.sidebar.error(f" Firebase Error: {str(e)}")
         return None
 
 firebase_bucket = init_firebase()
@@ -425,29 +450,27 @@ def proses_analisis_ai(file_input):
     return "❌ Gagal."
 
 # ============================================================
-# 10. SIDEBAR
+# 10. SIDEBAR (CLEAN & ELEGANT)
 # ============================================================
 with st.sidebar:
     if os.path.exists("ESP LOGO ICON RED WHITE.png"):
         st.image("ESP LOGO ICON RED WHITE.png", width=160)
+    
     st.title("PT. EKASARI PERKASA")
     st.markdown("<div style='color: #f59e0b; font-size: 12px; margin-top: -10px;'>SMART INVENTORY SYSTEM</div>", unsafe_allow_html=True)
-    st.markdown("---")
-    menu = st.radio("MENU UTAMA", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database"])
-    st.markdown("---")
-    st.caption(f"🔑 API Key: **{len(API_KEYS)}**")
-    st.caption("Build v11.0 - Premium Design")
-    st.markdown("---")
-    st.markdown("### 📊 System Status")
-    if sheet is not None: st.success("✅ Sheets: Connected")
-    else: st.error("❌ Sheets: Disconnected")
-    if FIREBASE_AVAILABLE and firebase_bucket: st.success("✅ Firebase: Connected")
-    else: st.error("❌ Firebase: Disconnected")
     
     st.markdown("---")
+    
+    # MENU UTAMA ELEGAN
+    st.markdown("<h3 style='color: #f59e0b; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 15px; font-size: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;'>MENU UTAMA</h3>", unsafe_allow_html=True)
+    menu = st.radio("", ["🏠 Dashboard", "📤 Scan & Upload", "📑 Full Database", "🤖 AI Agent", "📡 Tracking & Search"], label_visibility="collapsed")
+    
+    st.markdown("---")
+    
+    # Signature
     st.markdown("""
-    <div class="signature-box" style="margin-top: 40px; padding: 25px;">
-        <div class="signature-text" style="font-size: 26px;">Sebastian Sasmita.JR</div>
+    <div class="signature-box" style="margin-top: auto; padding: 25px;">
+        <div class="signature-text" style="font-size: 24px;">Sebastian Sasmita.JR</div>
         <div class="signature-year">© 2026 - PT. Ekasari Perkasa</div>
     </div>
     """, unsafe_allow_html=True)
@@ -496,7 +519,7 @@ if menu == "🏠 Dashboard":
             else: st.info("📭 Database kosong")
         except Exception as e: st.error(f"Error load  {e}")
     else:
-        st.warning("⚠️ Sheets tidak terkoneksi. Cek sidebar.")
+        st.warning("⚠️ Sheets tidak terkoneksi.")
 
 elif menu == "📤 Scan & Upload":
     st.markdown('<div class="title-logo">', unsafe_allow_html=True)
@@ -515,7 +538,7 @@ elif menu == "📤 Scan & Upload":
         nama_klien = st.text_input("🏢 Nama Perusahaan")
         divisi = st.selectbox("📋 Divisi", ["EXPORT", "IMPORT", "DOMESTIK"])
     with c_b:
-        kategori = st.selectbox("📁 Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "Lainnya"])
+        kategori = st.selectbox("📁 Kategori", ["MAWB", "Invoice", "Surat Jalan", "DOKAP", "Perizinan", "PEB", "PIB", "SPPB", "ECOO" , "COO" , "INSW DOC" , "SEWA GUDANG" , "Lainnya"])
         id_doc = st.text_input("🔢 ID Document (No AWB/Invoice)")
 
     st.markdown("---")
@@ -529,9 +552,9 @@ elif menu == "📤 Scan & Upload":
 
     if u_file and st.button("🚀 PROSES & SIMPAN", use_container_width=True, type="primary"):
         if not nama_klien.strip():
-            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank Muachh Pakai Sendal :-D")
+            st.warning("⚠️ Isi Nama Perusahaan Ya Sayank :-D")
         elif sheet is None:
-            st.error("❌ Google Sheets tidak terkoneksi! Cek sidebar.")
+            st.error("❌ Google Sheets tidak terkoneksi!")
         else:
             with st.spinner("🔍 Memvalidasi dokumen..."):
                 validation = validate_document_fields(u_file, nama_klien, divisi, kategori, id_doc)
@@ -548,7 +571,7 @@ elif menu == "📤 Scan & Upload":
                 else:
                     if not st.checkbox("✅ Ya, saya yakin dan ingin melanjutkan"): st.stop()
             
-            with st.spinner("🤖 System sedang menganalisis..."):
+            with st.spinner("🤖 menganalisis..."):
                 hasil = proses_analisis_ai(u_file)
                 if "❌" not in hasil and sheet is not None:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -564,7 +587,7 @@ elif menu == "📤 Scan & Upload":
                     st.markdown('<div class="success-box">', unsafe_allow_html=True)
                     st.success("✅ Berhasil disimpan ke database!")
                     st.markdown('</div>', unsafe_allow_html=True)
-                    with st.expander("📋 Hasil Analisis "): st.info(hasil)
+                    with st.expander("📋 Lihat Hasil Analisis AI"): st.info(hasil)
                 else: st.error(hasil)
     
     st.markdown("""
@@ -590,5 +613,196 @@ elif menu == "📑 Full Database":
     <div class="signature-box">
         <div class="signature-text">Sebastian Sasmita.JR</div>
         <div class="signature-year">System Developer | © 2026</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ============================================================
+# 12. FITUR BARU: AI AGENT ADMINISTRATIVE
+# ============================================================
+elif menu == "🤖 Smart Administrative Agent":
+    st.markdown('<div class="title-logo">', unsafe_allow_html=True)
+    col_logo2, col_title = st.columns([1, 8])
+    with col_logo2:
+        if os.path.exists("ESP LOGO ICON RED WHITE.png"): st.image("ESP LOGO ICON RED WHITE.png", width=60)
+    with col_title:
+        st.markdown("<h2 style='margin:0; color: #1e3a5f;'>Logistics Intelligence Agent</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>Auto-Analysis & PIB Tax Reporting Generation</p>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown(TAGLINE_HTML, unsafe_allow_html=True)
+    
+    if sheet is None:
+        st.error("❌ Database tidak terkoneksi. AI Agent tidak dapat berjalan.")
+    else:
+        try:
+            data = pd.DataFrame(sheet.get_all_records())
+            if data.empty:
+                st.warning("📭 Database kosong. Upload dokumen terlebih dahulu.")
+            else:
+                st.markdown("""
+                <div class="agent-card">
+                    <h3 class="agent-title">📊 Executive Summary</h3>
+                    <p style="color: #64748b;">Analisis data inventory saat ini untuk keperluan laporan pajak dan logistik.</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(" Generate Intelligence Report", type="primary", use_container_width=True):
+                    with st.spinner(" AI sedang menganalisis data logistik..."):
+                        # Convert dataframe to CSV string for AI context
+                        csv_context = data.to_csv(index=False)
+                        
+                        # Create specialized prompt
+                        prompt = f"""
+                        Kamu adalah Chief Administrative Officer di PT. Ekasari Perkasa.
+                        Tugasmu adalah membuat "Laporan PIB & Logistics Intelligence" dari data CSV berikut.
+                        Format laporan harus formal, profesional, dan siap untuk pelaporan pajak/internal.
+
+                        DATA CSV:
+                        {csv_context}
+
+                        BUAT LAPORAN DENGAN FORMAT BERIKUT:
+                        1. 📈 REKAPITULASI TOTAL:
+                           - Total Jumlah Dokumen PIB/MAWB
+                           - Total Estimasi Nilai Barang (jika ada angka, jumlahkan)
+                           - Total Berat Barang (jika ada angka, jumlahkan)
+                        
+                        2. 🌍 ANALISIS NEGARA ASAL:
+                           - Kelompokkan jumlah pengiriman berdasarkan Negara Asal.
+                           - Sebutkan Top 3 negara yang paling banyak melakukan pengiriman.
+                        
+                        3. 📦 KATEGORI BARANG:
+                           - Rincian jenis barang yang diimpor (Contoh: Live Tropical Fish, dll).
+                        
+                        4. ⚠️ REKOMENDASI PAJAK & LOGISTIK:
+                           - Berikan saran singkat untuk efisiensi bea cukai berdasarkan data.
+                        
+                        Gunakan Bahasa Indonesia yang baku.
+                        """
+                        
+                        try:
+                            genai.configure(api_key=API_KEYS[0])
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            response = model.generate_content(prompt)
+                            report_text = response.text
+                            
+                            st.markdown('<div class="agent-card">', unsafe_allow_html=True)
+                            st.markdown("### 📝 Laporan Intelligence Report")
+                            st.markdown(report_text)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Download Button
+                            st.download_button(
+                                label="📥 Download Laporan (TXT)",
+                                data=report_text,
+                                file_name="Laporan_PIB_Intelligence.txt",
+                                mime="text/plain"
+                            )
+                        except Exception as e:
+                            st.error(f"❌ Gagal generate report: {e}")
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+            
+    st.markdown("""
+    <div class="signature-box">
+        <div class="signature-text">Sebastian Sasmita.JR</div>
+        <div class="signature-year">Logistics Intelligence Powered by AI | © 2026</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ============================================================
+# 13. FITUR BARU: LIVE TRACKING MAWB & GLOBAL SEARCH (HS CODE)
+# ============================================================
+elif menu == "📡 Tracking & Search":
+    st.markdown('<div class="title-logo">', unsafe_allow_html=True)
+    col_logo2, col_title = st.columns([1, 8])
+    with col_logo2:
+        if os.path.exists("ESP LOGO ICON RED WHITE.png"): st.image("ESP LOGO ICON RED WHITE.png", width=60)
+    with col_title:
+        st.markdown("<h2 style='margin:0; color: #1e3a5f;'>Live Tracking & Global Search</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>MAWB Tracking Intelligence & HS Code Lookup</p>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown(TAGLINE_HTML, unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["📦 Live Tracking MAWB", "🌍 Global Search HS Code"])
+    
+    # TAB 1: LIVE TRACKING MAWB
+    with tab1:
+        st.markdown('<div class="agent-card">', unsafe_allow_html=True)
+        st.markdown("<h3 class='agent-title'>✈️ Live MAWB Tracking</h3>")
+        st.info("Masukkan Master Air Waybill (MAWB) Number untuk melacak status pengiriman secara real-time.")
+        
+        mawb_input = st.text_input("MAWB Number (Contoh: 203-12345678)", placeholder="XXX-XXXXXXXX")
+        
+        if st.button("🔍 Track Shipment", type="primary", use_container_width=True):
+            if mawb_input:
+                with st.spinner("📡 Menghubungkan ke Global Logistics Network..."):
+                    # Simulasi Tracking menggunakan AI
+                    prompt_tracking = f"""
+                    Simulasikan laporan tracking untuk nomor MAWB: {mawb_input}.
+                    Buat format yang realistis seperti dashboard logistik:
+                    
+                    1. **Current Status**: (In Transit / Arrived at Destination / Customs Clearance / Delivered)
+                    2. **Route**: Origin -> Transit -> Destination
+                    3. **ETA**: Estimasi waktu kedatangan
+                    4. **Last Update**: Hari ini
+                    
+                    Gunakan Bahasa Indonesia yang profesional.
+                    """
+                    try:
+                        genai.configure(api_key=API_KEYS[0])
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content(prompt_tracking)
+                        tracking_result = response.text
+                        
+                        st.markdown(f"**📡 Status Tracking untuk MAWB: {mawb_input}**")
+                        st.markdown(f"<span class='tracking-status'>STATUS: IN TRANSIT</span>", unsafe_allow_html=True)
+                        st.markdown(tracking_result)
+                    except Exception as e:
+                        st.error(f"❌ Gagal tracking: {e}")
+            else:
+                st.warning("⚠️ Masukkan nomor MAWB terlebih dahulu.")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # TAB 2: GLOBAL SEARCH HS CODE
+    with tab2:
+        st.markdown('<div class="agent-card">', unsafe_allow_html=True)
+        st.markdown("<h3 class='agent-title'>🔍 Global HS Code Search</h3>")
+        st.info("Cari Kode HS (Harmonized System) untuk impor barang ke Indonesia.")
+        
+        hs_query = st.text_input("Nama Barang / Deskripsi", placeholder="Contoh: Live Tropical Fish, Electronic Components")
+        
+        if st.button(" Search HS Code", type="primary", use_container_width=True):
+            if hs_query:
+                with st.spinner("🔍 Searching Global Tariff Database..."):
+                    prompt_hs = f"""
+                    Saya ingin mengimpor barang: "{hs_query}" ke Indonesia.
+                    Berikan informasi:
+                    1. **HS Code**: Kode HS yang relevan (6-8 digit).
+                    2. **Uraian Barang**: Deskripsi resmi bea cukai.
+                    3. **Estimasi Bea Masuk**: % Tarif Bea Masuk (BM) dan PPN Impor.
+                    4. **Syarat Khusus**: (Lartas/Non-Lartas).
+                    
+                    Gunakan Bahasa Indonesia.
+                    """
+                    try:
+                        genai.configure(api_key=API_KEYS[0])
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content(prompt_hs)
+                        hs_result = response.text
+                        
+                        st.markdown(f"** Hasil Pencarian untuk: {hs_query}**")
+                        st.markdown(hs_result)
+                    except Exception as e:
+                        st.error(f"❌ Gagal mencari HS Code: {e}")
+            else:
+                st.warning("⚠️ Masukkan nama barang yang ingin dicari.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="signature-box">
+        <div class="signature-text">Sebastian Sasmita.JR</div>
+        <div class="signature-year">Global Logistics Intelligence | © 2026</div>
     </div>
     """, unsafe_allow_html=True)

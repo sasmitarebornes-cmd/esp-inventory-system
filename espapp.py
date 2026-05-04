@@ -710,7 +710,7 @@ elif menu == "📡 Tracking & Search":
         
         if st.button("🔎 Cari Informasi Perdagangan", type="primary", use_container_width=True):
             if hs_query:
-                with st.spinner("🔍 AI Agent sedang menganalisis regulasi perdagangan..."):
+                with st.spinner("🔍 System sedang menganalisis regulasi perdagangan..."):
                     try:
                         genai.configure(api_key=API_KEYS[0])
                         search_result = None

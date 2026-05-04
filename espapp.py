@@ -217,7 +217,13 @@ API_KEYS = load_api_keys()
 
 # ✅ MODEL_LIST - Updated to stable models available in 2026
 MODEL_LIST = [
-    "gemini-pro",              # Model stabil utama
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-exp",
+    "gemini-3-flash",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-pro"              
 ]
 
 if not API_KEYS:

@@ -215,15 +215,15 @@ def load_api_keys():
 
 API_KEYS = load_api_keys()
 
-# ✅ MODEL_LIST - Updated to stable models available in 2026
-MODEL_LIST = [
+# ✅ MODEL FALLBACK LIST - Updated sesuai permintaan
+AVAILABLE_MODELS = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
     "gemini-2.0-flash-exp",
     "gemini-3-flash",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-pro"              
+    "gemini-2.5-pro"
 ]
 
 if not API_KEYS:
@@ -355,7 +355,7 @@ Output HANYA JSON.
         extracted = None
         for api_key in API_KEYS:
             genai.configure(api_key=api_key)
-            for model_name in MODEL_LIST:
+            for model_name in AVAILABLE_MODELS:
                 try:
                     mdl = genai.GenerativeModel(model_name)
                     response = mdl.generate_content(konten)
@@ -367,7 +367,8 @@ Output HANYA JSON.
                     extracted = json.loads(hasil)
                     break
                 except Exception as e:
-                    if "404" in str(e).lower(): continue
+                    if "404" in str(e).lower() or "not found" in str(e).lower():
+                        continue
                     raise
             if extracted: break
             
@@ -440,9 +441,10 @@ def proses_analisis_ai(file_input):
         konten = build_content(file_input)
     except Exception as e:
         return f"❌ Gagal baca file: {e}"
+    
     for api_key in API_KEYS:
         genai.configure(api_key=api_key)
-        for model_name in MODEL_LIST:
+        for model_name in AVAILABLE_MODELS:
             try:
                 mdl = genai.GenerativeModel(model_name)
                 response = mdl.generate_content(konten)
@@ -451,8 +453,10 @@ def proses_analisis_ai(file_input):
                 return hasil
             except Exception as e:
                 err = str(e).lower()
-                if "404" in err or "not found" in err: continue
-                if "quota" in err: continue
+                if "404" in err or "not found" in err:
+                    continue
+                if "quota" in err:
+                    continue
                 return f"❌ Error API: {e}"
     return "❌ Gagal."
 
@@ -640,7 +644,7 @@ elif menu == "📡 Tracking & Search":
     
     tab1, tab2 = st.tabs(["📦 Live Tracking MAWB", "🌍 Global Search HS Code"])
     
-    # TAB 1: LIVE TRACKING MAWB - FIXED dengan model stabil
+    # TAB 1: LIVE TRACKING MAWB - FIXED with model fallback
     with tab1:
         st.markdown('<div class="agent-card">', unsafe_allow_html=True)
         st.markdown("<h3 class='agent-title'>✈️ Live MAWB Tracking</h3>", unsafe_allow_html=True)
@@ -653,27 +657,36 @@ elif menu == "📡 Tracking & Search":
                 with st.spinner("📡 Menghubungkan ke Global Logistics Network..."):
                     try:
                         genai.configure(api_key=API_KEYS[0])
-                        # Gunakan model gemini-pro yang stabil
-                        model = genai.GenerativeModel("gemini-pro")
+                        tracking_result = None
                         
-                        prompt_tracking = f"""
-                        Simulasikan laporan tracking profesional untuk nomor MAWB: {mawb_input}.
+                        # ✅ MODEL FALLBACK MECHANISM
+                        for model_name in AVAILABLE_MODELS:
+                            try:
+                                model = genai.GenerativeModel(model_name)
+                                prompt_tracking = f"""
+                                Simulasikan laporan tracking profesional untuk nomor MAWB: {mawb_input}.
+                                
+                                Berikan informasi dalam format berikut:
+                                1. **Status Pengiriman**: (In Transit / Arrived at Destination / Customs Clearance / Delivered)
+                                2. **Rute**: Origin -> Transit -> Destination
+                                3. **Estimasi Kedatangan (ETA)**: [Tanggal/Waktu]
+                                4. **Update Terakhir**: [Informasi waktu]
+                                5. **Lokasi Saat Ini**: [Lokasi]
+                                
+                                Gunakan Bahasa Indonesia yang profesional.
+                                """
+                                response = model.generate_content(prompt_tracking)
+                                tracking_result = response.text
+                                break  # Success, exit loop
+                            except Exception as model_err:
+                                continue  # Try next model
                         
-                        Berikan informasi dalam format berikut:
-                        1. **Status Pengiriman**: (In Transit / Arrived at Destination / Customs Clearance / Delivered)
-                        2. **Rute**: Origin -> Transit -> Destination
-                        3. **Estimasi Kedatangan (ETA)**: [Tanggal/Waktu]
-                        4. **Update Terakhir**: [Informasi waktu]
-                        5. **Lokasi Saat Ini**: [Lokasi]
-                        
-                        Gunakan Bahasa Indonesia yang profesional.
-                        """
-                        response = model.generate_content(prompt_tracking)
-                        tracking_result = response.text
-                        
-                        st.markdown(f"**📡 Status Tracking untuk MAWB: {mawb_input}**")
-                        st.markdown(f"<span class='tracking-status'>STATUS: IN TRANSIT</span>", unsafe_allow_html=True)
-                        st.markdown(tracking_result)
+                        if tracking_result:
+                            st.markdown(f"**📡 Status Tracking untuk MAWB: {mawb_input}**")
+                            st.markdown(f"<span class='tracking-status'>STATUS: IN TRANSIT</span>", unsafe_allow_html=True)
+                            st.markdown(tracking_result)
+                        else:
+                            st.error("❌ Tidak dapat mengambil data tracking. Silakan coba lagi.")
                             
                     except Exception as e:
                         st.error(f"❌ Gagal tracking: {str(e)}")
@@ -681,7 +694,7 @@ elif menu == "📡 Tracking & Search":
                 st.warning("⚠️ Masukkan nomor MAWB terlebih dahulu.")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # TAB 2: GLOBAL SEARCH HS CODE - FIXED dengan model stabil
+    # TAB 2: GLOBAL SEARCH HS CODE - FIXED with model fallback
     with tab2:
         st.markdown('<div class="agent-card">', unsafe_allow_html=True)
         st.markdown("<h3 class='agent-title'>🔍 Global HS Code Search</h3>", unsafe_allow_html=True)
@@ -694,25 +707,34 @@ elif menu == "📡 Tracking & Search":
                 with st.spinner("🔍 Searching Global Tariff Database..."):
                     try:
                         genai.configure(api_key=API_KEYS[0])
-                        # Gunakan model gemini-pro yang stabil
-                        model = genai.GenerativeModel("gemini-pro")
+                        hs_result = None
                         
-                        prompt_hs = f"""
-                        Saya ingin mengimpor barang: "{hs_query}" ke Indonesia.
+                        # ✅ MODEL FALLBACK MECHANISM
+                        for model_name in AVAILABLE_MODELS:
+                            try:
+                                model = genai.GenerativeModel(model_name)
+                                prompt_hs = f"""
+                                Saya ingin mengimpor barang: "{hs_query}" ke Indonesia.
+                                
+                                Berikan informasi berikut:
+                                1. **HS Code**: Kode HS yang relevan (6-8 digit)
+                                2. **Uraian Barang**: Deskripsi resmi bea cukai
+                                3. **Estimasi Bea Masuk**: % Tarif Bea Masuk (BM) dan PPN Impor
+                                4. **Syarat Khusus**: (Lartas/Non-Lartas, dokumen yang diperlukan)
+                                
+                                Gunakan Bahasa Indonesia yang profesional.
+                                """
+                                response = model.generate_content(prompt_hs)
+                                hs_result = response.text
+                                break  # Success, exit loop
+                            except Exception as model_err:
+                                continue  # Try next model
                         
-                        Berikan informasi berikut:
-                        1. **HS Code**: Kode HS yang relevan (6-8 digit)
-                        2. **Uraian Barang**: Deskripsi resmi bea cukai
-                        3. **Estimasi Bea Masuk**: % Tarif Bea Masuk (BM) dan PPN Impor
-                        4. **Syarat Khusus**: (Lartas/Non-Lartas, dokumen yang diperlukan)
-                        
-                        Gunakan Bahasa Indonesia yang profesional.
-                        """
-                        response = model.generate_content(prompt_hs)
-                        hs_result = response.text
-                        
-                        st.markdown(f"**🔍 Hasil Pencarian untuk: {hs_query}**")
-                        st.markdown(hs_result)
+                        if hs_result:
+                            st.markdown(f"**🔍 Hasil Pencarian untuk: {hs_query}**")
+                            st.markdown(hs_result)
+                        else:
+                            st.error("❌ Tidak dapat mencari HS Code. Silakan coba lagi.")
                             
                     except Exception as e:
                         st.error(f"❌ Gagal mencari HS Code: {str(e)}")

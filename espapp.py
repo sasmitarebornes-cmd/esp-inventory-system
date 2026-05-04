@@ -664,7 +664,7 @@ elif menu == "📡 Tracking & Search":
                     """
                     try:
                         genai.configure(api_key=API_KEYS[0])
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        model = genai.GenerativeModel("gemini-3-flash")
                         response = model.generate_content(prompt_tracking)
                         tracking_result = response.text
                         

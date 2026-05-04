@@ -628,7 +628,7 @@ elif menu == "📑 Full Database":
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 12. FITUR BARU: LIVE TRACKING MAWB & GLOBAL SEARCH (HS CODE)
+# 12. FITUR BARU: LIVE TRACKING MAWB & GLOBAL SEARCH (EXPORT & IMPORT)
 # ============================================================
 elif menu == "📡 Tracking & Search":
     st.markdown('<div class="title-logo">', unsafe_allow_html=True)
@@ -637,12 +637,12 @@ elif menu == "📡 Tracking & Search":
         if os.path.exists("ESP LOGO ICON RED WHITE.png"): st.image("ESP LOGO ICON RED WHITE.png", width=60)
     with col_title:
         st.markdown("<h2 style='margin:0; color: #1e3a5f;'>Live Tracking & Global Search</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>MAWB Tracking Intelligence & HS Code Lookup</p>", unsafe_allow_html=True)
+        st.markdown("<p style='margin:5px 0 0 0; color: #64748b;'>MAWB Tracking Intelligence & HS Code Lookup (Export & Import)</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown(TAGLINE_HTML, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["📦 Live Tracking MAWB", "🌍 Global Search HS Code"])
+    tab1, tab2 = st.tabs(["📦 Live Tracking MAWB", "🌍 Global Search Intelligence"])
     
     # TAB 1: LIVE TRACKING MAWB - FIXED with model fallback
     with tab1:
@@ -694,50 +694,112 @@ elif menu == "📡 Tracking & Search":
                 st.warning("⚠️ Masukkan nomor MAWB terlebih dahulu.")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # TAB 2: GLOBAL SEARCH HS CODE - FIXED with model fallback
+    # TAB 2: GLOBAL SEARCH INTELLIGENCE - EXPORT & IMPORT
     with tab2:
         st.markdown('<div class="agent-card">', unsafe_allow_html=True)
-        st.markdown("<h3 class='agent-title'>🔍 Global HS Code Search</h3>", unsafe_allow_html=True)
-        st.info("Cari Kode HS (Harmonized System) untuk impor barang ke Indonesia.")
+        st.markdown("<h3 class='agent-title'>🌍 Global Trade Intelligence</h3>", unsafe_allow_html=True)
+        st.info("Cari informasi HS Code, regulasi, dan persyaratan untuk EXPORT dan IMPORT barang.")
         
-        hs_query = st.text_input("Nama Barang / Deskripsi", placeholder="Contoh: Live Tropical Fish, Electronic Components")
+        # Pilih mode: Export atau Import
+        trade_mode = st.radio("Pilih Mode Perdagangan:", ["📤 EXPORT (Dari Indonesia)", "📥 IMPORT (Ke Indonesia)"], horizontal=True)
         
-        if st.button("🔎 Search HS Code", type="primary", use_container_width=True):
+        hs_query = st.text_input("Nama Barang / Deskripsi", placeholder="Contoh: Live Tropical Fish, Electronic Components, Textile, dll")
+        
+        # Input tambahan untuk negara
+        country_input = st.text_input("Negara Tujuan/Asal (Opsional)", placeholder="Contoh: USA, China, Japan, dll")
+        
+        if st.button("🔎 Cari Informasi Perdagangan", type="primary", use_container_width=True):
             if hs_query:
-                with st.spinner("🔍 Searching Global Tariff Database..."):
+                with st.spinner("🔍 AI Agent sedang menganalisis regulasi perdagangan..."):
                     try:
                         genai.configure(api_key=API_KEYS[0])
-                        hs_result = None
+                        search_result = None
+                        
+                        # Tentukan mode
+                        mode_text = "EXPORT" if "EXPORT" in trade_mode else "IMPORT"
+                        direction = "dari Indonesia" if "EXPORT" in trade_mode else "ke Indonesia"
                         
                         # ✅ MODEL FALLBACK MECHANISM
                         for model_name in AVAILABLE_MODELS:
                             try:
                                 model = genai.GenerativeModel(model_name)
-                                prompt_hs = f"""
-                                Saya ingin mengimpor barang: "{hs_query}" ke Indonesia.
                                 
-                                Berikan informasi berikut:
-                                1. **HS Code**: Kode HS yang relevan (6-8 digit)
-                                2. **Uraian Barang**: Deskripsi resmi bea cukai
-                                3. **Estimasi Bea Masuk**: % Tarif Bea Masuk (BM) dan PPN Impor
-                                4. **Syarat Khusus**: (Lartas/Non-Lartas, dokumen yang diperlukan)
+                                if "EXPORT" in trade_mode:
+                                    prompt_hs = f"""
+                                    Saya ingin melakukan EXPORT barang: "{hs_query}" {f"ke {country_input}" if country_input else ""}.
+                                    
+                                    Berikan informasi LENGKAP berikut:
+                                    
+                                    1. **HS Code**: Kode HS yang relevan (6-8 digit)
+                                    2. **Uraian Barang**: Deskripsi resmi bea cukai
+                                    3. **Bea Keluar**: % Tarif Bea Keluar (jika ada)
+                                    4. **Restriksi Export**: 
+                                       - Apakah barang kena Lartas Export?
+                                       - Apakah perlu izin khusus (PIBE, Surveyor, dll)?
+                                    5. **Dokumen yang Diperlukan**:
+                                       - Dokumen Bea Cukai
+                                       - Dokumen teknis/khusus
+                                    6. **Pajak & Insentif**:
+                                       - PPN Export
+                                       - Fasilitas yang tersedia
+                                    7. **Negara Tujuan**: {country_input if country_input else "Umum"}
+                                       - Persyaratan khusus negara tujuan
+                                    8. **Rekomendasi**: Tips untuk kelancaran export
+                                    
+                                    Gunakan Bahasa Indonesia yang profesional dan detail.
+                                    """
+                                else:
+                                    prompt_hs = f"""
+                                    Saya ingin melakukan IMPORT barang: "{hs_query}" {f"dari {country_input}" if country_input else ""} ke Indonesia.
+                                    
+                                    Berikan informasi LENGKAP berikut:
+                                    
+                                    1. **HS Code**: Kode HS yang relevan (6-8 digit)
+                                    2. **Uraian Barang**: Deskripsi resmi bea cukai
+                                    3. **Bea Masuk**: % Tarif Bea Masuk (BM) normal dan preferensi
+                                    4. **Pajak Impor**:
+                                       - PPN Impor (11%)
+                                       - PPh Pasal 22 Impor
+                                       - PPnBM (jika ada)
+                                    5. **Restriksi Import**:
+                                       - Apakah barang kena Lartas Import?
+                                       - Apakah perlu izin khusus (PI, NIK, Surveyor, dll)?
+                                    6. **Dokumen yang Diperlukan**:
+                                       - Dokumen Bea Cukai (PIB, Invoice, Packing List, BL/AWB)
+                                       - Dokumen teknis/khusus (SNI, BPOM, Karantina, dll)
+                                    7. **Negara Asal**: {country_input if country_input else "Umum"}
+                                       - Apakah ada perjanjian perdagangan (FTA)?
+                                       - Apakah ada larangan/embargo?
+                                    8. **Rekomendasi**: Tips untuk kelancaran import dan kepatuhan regulasi
+                                    
+                                    Gunakan Bahasa Indonesia yang profesional dan detail.
+                                    """
                                 
-                                Gunakan Bahasa Indonesia yang profesional.
-                                """
                                 response = model.generate_content(prompt_hs)
-                                hs_result = response.text
+                                search_result = response.text
                                 break  # Success, exit loop
                             except Exception as model_err:
                                 continue  # Try next model
                         
-                        if hs_result:
-                            st.markdown(f"**🔍 Hasil Pencarian untuk: {hs_query}**")
-                            st.markdown(hs_result)
+                        if search_result:
+                            st.markdown(f"**🔍 Hasil Pencarian {mode_text}: {hs_query}**")
+                            if country_input:
+                                st.markdown(f"**Negara**: {country_input}")
+                            st.markdown("---")
+                            st.markdown(search_result)
+                            
+                            # Download button
+                            st.download_button(
+                                label="📥 Download Hasil Pencarian (TXT)",
+                                data=search_result,
+                                file_name=f"{mode_text}_{hs_query.replace(' ', '_')}_Intelligence.txt",
+                                mime="text/plain"
+                            )
                         else:
-                            st.error("❌ Tidak dapat mencari HS Code. Silakan coba lagi.")
+                            st.error("❌ Tidak dapat mencari informasi. Silakan coba lagi.")
                             
                     except Exception as e:
-                        st.error(f"❌ Gagal mencari HS Code: {str(e)}")
+                        st.error(f"❌ Gagal mencari: {str(e)}")
             else:
                 st.warning("⚠️ Masukkan nama barang yang ingin dicari.")
         st.markdown('</div>', unsafe_allow_html=True)
